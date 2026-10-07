@@ -60,6 +60,14 @@ Offline analysis needs only NumPy and Matplotlib.
    The controller temporarily uses external triggering, saves six frames under
    `src/captured_frames/phase_capture_*`, and automatically runs the phase checker.
    Sessions include a `*_raw_stack.npy`, PNG frames, and ROI/session metadata.
+   Each completed stack is also added to Napari as its own `time, y, x` image
+   layer, with a time slider for stepping through the six frames. Select a
+   captured layer to inspect it; use **Camera Tools > Return to Camera Preview**
+   to resume the live preview. Captured layers remain available for the current
+   Napari session while the original files continue to be saved to disk.
+   To analyse a particular saved stack, select its layer and choose
+   **Camera Tools > Analyze Selected Stack**. **Analyze Latest Capture** remains
+   available when you want the most recently saved phase capture instead.
    Choose the phase-step method in the Camera Status controls. The default
    remains the 90-degree six-frame method; the alternative is the 60-degree
    six-bucket method. Recalibrate separately after switching methods because

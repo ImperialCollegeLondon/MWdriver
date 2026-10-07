@@ -1302,9 +1302,12 @@ class ThorlabsCameraViewer(QObject):
         self.latest_phase_save_result = None
         self.phase_analysis_process = None
         self.phase_analysis_output_path = None
+        self.phase_analysis_source_stack_name = None
         self.phase_analysis_results = {}
         self.phase_analysis_layer = None
         self.phase_analysis_view_active = False
+        self.phase_capture_time_series_layers = []
+        self.pending_phase_capture_layer = None
         self.last_trigger_update_ack_positions_ms = None
         self.last_trigger_update_error_text = None
         self.active_trigger_positions_ms = None
@@ -1508,6 +1511,30 @@ class ThorlabsCameraViewer(QObject):
     def on_active_layer_changed(self, event=None):
         try:
             active_layer = self.viewer.layers.selection.active
+
+            if active_layer is self.layer:
+                self.show_camera_preview()
+            elif active_layer is self.roi_layer:
+                self.layer.visible = True
+                self.roi_layer.visible = True
+                if self.phase_analysis_layer is not None:
+                    self.phase_analysis_layer.visible = False
+                for time_series_layer in self.phase_capture_time_series_layers:
+                    time_series_layer.visible = False
+            elif active_layer in self.phase_capture_time_series_layers:
+                self.layer.visible = False
+                if self.roi_layer is not None:
+                    self.roi_layer.visible = True
+                if self.phase_analysis_layer is not None:
+                    self.phase_analysis_layer.visible = False
+                for time_series_layer in self.phase_capture_time_series_layers:
+                    time_series_layer.visible = time_series_layer is active_layer
+            elif active_layer is self.phase_analysis_layer:
+                self.layer.visible = False
+                if self.roi_layer is not None:
+                    self.roi_layer.visible = False
+                for time_series_layer in self.phase_capture_time_series_layers:
+                    time_series_layer.visible = False
 
             if (
                 self.profile_enabled
@@ -2218,6 +2245,11 @@ class ThorlabsCameraViewer(QObject):
             "Analyze Latest Capture",
             qt_window,
         )
+        self.analyze_selected_phase_button = QAction(
+            "Analyze Selected Stack",
+            qt_window,
+        )
+        self.camera_preview_button = QAction("Return to Camera Preview", qt_window)
 
         self.start_button.setStatusTip("Start live camera stream")
         self.stop_button.setStatusTip("Stop live camera stream")
@@ -2233,6 +2265,9 @@ class ThorlabsCameraViewer(QObject):
         self.analyze_latest_phase_button.setStatusTip(
             "Analyze the latest completed six-frame phase capture"
         )
+        self.analyze_selected_phase_button.setStatusTip(
+            "Analyze the currently selected captured six-frame stack"
+        )
 
         self.camera_menu.addAction(self.start_button)
         self.camera_menu.addAction(self.stop_button)
@@ -2243,7 +2278,9 @@ class ThorlabsCameraViewer(QObject):
         self.camera_menu.addSeparator()
         self.camera_menu.addAction(self.start_phase_capture_button)
         self.camera_menu.addAction(self.recalibrate_button)
+        self.camera_menu.addAction(self.analyze_selected_phase_button)
         self.camera_menu.addAction(self.analyze_latest_phase_button)
+        self.camera_menu.addAction(self.camera_preview_button)
 
         self.stop_button.setEnabled(False)
         self.record_button.setEnabled(False)
@@ -2262,6 +2299,10 @@ class ThorlabsCameraViewer(QObject):
         self.analyze_latest_phase_button.triggered.connect(
             self.run_latest_phase_analysis
         )
+        self.analyze_selected_phase_button.triggered.connect(
+            self.run_selected_phase_analysis
+        )
+        self.camera_preview_button.triggered.connect(self.show_camera_preview)
 
         # ============================================================
         # 2) Compact status widget in the left layer-controls panel
@@ -2622,6 +2663,7 @@ class ThorlabsCameraViewer(QObject):
         print("Embedded intensity profile controls ready.")
 
     def start_rectangle_roi(self):
+        self.prepare_roi_drawing()
         self.roi_layer.data = []
         self.roi_params = None
         self.roi_mask = None
@@ -2632,13 +2674,14 @@ class ThorlabsCameraViewer(QObject):
         self.last_roi_count = 0
         self.waiting_for_roi_finish = True
 
-        self.viewer.layers.selection.active = self.roi_layer
         self.roi_layer.mode = "add_rectangle"
+        self.viewer.layers.selection.active = self.roi_layer
 
         self.roi_label.setText("ROI: Draw one rectangle")
         self.status_label.setText("Status: Rectangle ROI mode")
 
     def start_circle_roi(self):
+        self.prepare_roi_drawing()
         self.roi_layer.data = []
         self.roi_params = None
         self.roi_mask = None
@@ -2649,11 +2692,23 @@ class ThorlabsCameraViewer(QObject):
         self.last_roi_count = 0
         self.waiting_for_roi_finish = True
 
-        self.viewer.layers.selection.active = self.roi_layer
         self.roi_layer.mode = "add_ellipse"
+        self.viewer.layers.selection.active = self.roi_layer
 
         self.roi_label.setText("ROI: Draw one circle/ellipse")
         self.status_label.setText("Status: Circle ROI mode")
+
+    def prepare_roi_drawing(self):
+        self.layer.visible = True
+        self.roi_layer.visible = True
+        if self.phase_analysis_layer is not None:
+            self.phase_analysis_layer.visible = False
+        for time_series_layer in self.phase_capture_time_series_layers:
+            time_series_layer.visible = False
+        self.phase_analysis_view_active = False
+        if self.view_phase_analysis_button is not None:
+            self.view_phase_analysis_button.setText("View Analysis Results")
+        self.viewer.reset_view()
 
     def on_roi_data_changed(self, event=None):
         if self.roi_layer is None:
@@ -4074,6 +4129,14 @@ class ThorlabsCameraViewer(QObject):
         phase_times = self.phase_capture_times.copy()
         phase_frame_timestamps = []
 
+        try:
+            self.add_phase_capture_time_series_layer(
+                frames,
+                self.last_capture_algorithm_id,
+            )
+        except Exception as error:
+            print("Could not add phase stack to Napari:", error)
+
         for idx, host_time_s in enumerate(phase_times):
             if self.phase_capture_frame_timestamps[idx] is not None:
                 record = dict(self.phase_capture_frame_timestamps[idx])
@@ -4128,6 +4191,45 @@ class ThorlabsCameraViewer(QObject):
         # After the 6 hardware-triggered frames are collected, return the
         # camera to normal live view mode.
         self.return_to_live_view_mode()
+
+    def add_phase_capture_time_series_layer(self, frames, algorithm_id):
+        stack = np.stack(frames, axis=0)
+        capture_number = len(self.phase_capture_time_series_layers) + 1
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        algorithm = get_psi_algorithm(algorithm_id)
+
+        time_series_layer = self.viewer.add_image(
+            stack,
+            name=(
+                f"Phase time series {capture_number:03d} "
+                f"{timestamp} ({algorithm['phase_step_deg']:g} deg)"
+            ),
+            axis_labels=("time", "y", "x"),
+            colormap="gray",
+            metadata={
+                "algorithm_id": algorithm_id,
+                "expected_phase_deg": list(algorithm["expected_phase_deg"]),
+                "phase_times_s": list(self.phase_capture_times),
+            },
+        )
+        self.phase_capture_time_series_layers.append(time_series_layer)
+        self.pending_phase_capture_layer = time_series_layer
+
+        self.layer.visible = False
+        if self.phase_analysis_layer is not None:
+            self.phase_analysis_layer.visible = False
+        if self.roi_layer is not None:
+            self.roi_layer.visible = True
+        for previous_layer in self.phase_capture_time_series_layers[:-1]:
+            previous_layer.visible = False
+        time_series_layer.visible = True
+        self.viewer.layers.selection.active = time_series_layer
+        self.viewer.reset_view()
+        print(
+            "Added capture stack to Napari:",
+            time_series_layer.name,
+            stack.shape,
+        )
 
     def start_save_phase_frames_worker(self, frames, phase_times, phase_frame_timestamps=None):
         if self.save_thread is not None:
@@ -4239,6 +4341,42 @@ class ThorlabsCameraViewer(QObject):
         return os.path.abspath(max(candidates)[1])
 
     def run_latest_phase_analysis(self):
+        session_dir = self.find_latest_phase_analysis_session()
+        if session_dir is None:
+            self.status_label.setText(
+                "Status: No completed phase capture is available for analysis"
+            )
+            return
+
+        self.run_phase_analysis_session(session_dir, "latest phase capture")
+
+    def run_selected_phase_analysis(self):
+        selected_layer = self.viewer.layers.selection.active
+        if selected_layer not in self.phase_capture_time_series_layers:
+            self.status_label.setText(
+                "Status: Select a captured six-frame stack in the layer list first"
+            )
+            return
+
+        session_dir = selected_layer.metadata.get("session_dir")
+        raw_stack_path = selected_layer.metadata.get("raw_stack_path")
+        if (
+            not session_dir
+            or not os.path.isdir(session_dir)
+            or not raw_stack_path
+            or not os.path.isfile(raw_stack_path)
+        ):
+            self.status_label.setText(
+                "Status: Selected stack is still saving or has no saved session"
+            )
+            return
+
+        self.run_phase_analysis_session(
+            session_dir,
+            f"selected stack {selected_layer.name}",
+        )
+
+    def run_phase_analysis_session(self, session_dir, description):
         if self.save_thread is not None:
             self.status_label.setText(
                 "Status: Phase capture is still being saved; please wait"
@@ -4260,14 +4398,21 @@ class ThorlabsCameraViewer(QObject):
             )
             return
 
-        session_dir = self.find_latest_phase_analysis_session()
-        if session_dir is None:
-            self.status_label.setText(
-                "Status: No completed phase capture is available for analysis"
-            )
-            return
-
         try:
+            raw_stack_paths = sorted(
+                os.path.join(session_dir, filename)
+                for filename in os.listdir(session_dir)
+                if filename.endswith("_raw_stack.npy")
+            )
+            if not raw_stack_paths:
+                self.status_label.setText(
+                    f"Status: No raw image stack found in {session_dir}"
+                )
+                return
+            self.phase_analysis_source_stack_name = os.path.basename(
+                raw_stack_paths[0]
+            )
+
             self.phase_analysis_output_path = os.path.join(
                 session_dir,
                 "phase_analysis_results.npz",
@@ -4290,10 +4435,10 @@ class ThorlabsCameraViewer(QObject):
                 cwd=SCRIPT_DIR,
             )
             self.status_label.setText(
-                f"Status: Analyzing latest phase capture in background: "
+                f"Status: Analyzing {description} in background: "
                 f"{os.path.basename(session_dir)}"
             )
-            print("Started phase analysis:", session_dir)
+            print(f"Started phase analysis for {description}:", session_dir)
             QTimer.singleShot(200, self.check_phase_analysis_process)
         except Exception as error:
             self.phase_analysis_process = None
@@ -4448,6 +4593,8 @@ class ThorlabsCameraViewer(QObject):
 
         result_data = self.phase_analysis_results[result_key]
         result_name = self.phase_analysis_selector.currentText()
+        source_name = self.phase_analysis_source_stack_name or "unknown stack"
+        layer_name = f"Analysis [{source_name}]: {result_name}"
         is_rgb = (
             result_data.ndim == 3
             and result_data.shape[-1] in (3, 4)
@@ -4480,19 +4627,19 @@ class ThorlabsCameraViewer(QObject):
         if self.phase_analysis_layer is None and is_rgb:
             self.phase_analysis_layer = self.viewer.add_image(
                 result_data,
-                name=f"Phase Analysis: {result_name}",
+                name=layer_name,
                 rgb=True,
             )
         elif self.phase_analysis_layer is None:
             self.phase_analysis_layer = self.viewer.add_image(
                 result_data,
-                name=f"Phase Analysis: {result_name}",
+                name=layer_name,
                 colormap=colormap,
                 contrast_limits=contrast_limits,
             )
         else:
             self.phase_analysis_layer.data = result_data
-            self.phase_analysis_layer.name = f"Phase Analysis: {result_name}"
+            self.phase_analysis_layer.name = layer_name
             if not is_rgb:
                 self.phase_analysis_layer.colormap = colormap
                 if contrast_limits is not None:
@@ -4501,7 +4648,24 @@ class ThorlabsCameraViewer(QObject):
         self.phase_analysis_layer.visible = True
         self.layer.visible = False
         self.roi_layer.visible = False
+        for time_series_layer in self.phase_capture_time_series_layers:
+            time_series_layer.visible = False
         self.viewer.layers.selection.active = self.phase_analysis_layer
+        self.viewer.reset_view()
+
+    def show_camera_preview(self):
+        if self.phase_analysis_layer is not None:
+            self.phase_analysis_layer.visible = False
+        for time_series_layer in self.phase_capture_time_series_layers:
+            time_series_layer.visible = False
+        self.layer.visible = True
+        if self.roi_layer is not None:
+            self.roi_layer.visible = True
+        self.phase_analysis_view_active = False
+        if self.view_phase_analysis_button is not None:
+            self.view_phase_analysis_button.setText("View Analysis Results")
+        if self.viewer.layers.selection.active is not self.layer:
+            self.viewer.layers.selection.active = self.layer
         self.viewer.reset_view()
 
     def toggle_phase_analysis_view(self):
@@ -4510,15 +4674,8 @@ class ThorlabsCameraViewer(QObject):
             return
 
         if self.phase_analysis_view_active:
-            if self.phase_analysis_layer is not None:
-                self.phase_analysis_layer.visible = False
-            self.layer.visible = True
-            self.roi_layer.visible = True
-            self.viewer.layers.selection.active = self.layer
-            self.view_phase_analysis_button.setText("View Analysis Results")
-            self.phase_analysis_view_active = False
+            self.show_camera_preview()
             self.status_label.setText("Status: Returned to camera preview")
-            self.viewer.reset_view()
             return
 
         self.phase_analysis_view_active = True
@@ -5418,6 +5575,21 @@ class ThorlabsCameraViewer(QObject):
 
     def on_phase_save_result(self, result):
         self.latest_phase_save_result = result
+
+        if (
+            isinstance(result, dict)
+            and result.get("save_success")
+            and self.pending_phase_capture_layer is not None
+        ):
+            self.pending_phase_capture_layer.metadata["session_dir"] = result.get(
+                "session_dir"
+            )
+            self.pending_phase_capture_layer.metadata["raw_stack_path"] = result.get(
+                "raw_stack_path"
+            )
+            self.pending_phase_capture_layer = None
+        elif isinstance(result, dict) and not result.get("save_success"):
+            self.pending_phase_capture_layer = None
 
         if not self.recalibration_active:
             return
