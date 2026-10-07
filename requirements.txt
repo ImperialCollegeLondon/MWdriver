@@ -1,0 +1,8 @@
+numpy
+matplotlib
+imageio
+pyserial
+pylablib
+napari
+qtpy
+PySide6
