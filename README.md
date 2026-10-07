@@ -12,8 +12,9 @@ the desktop application coordinates acquisition and saves captures for analysis.
 | `src/camera.py` | Napari/Qt desktop controller: live view, ROI selection, six-frame capture, trigger recalibration, and analysis launching. |
 | `src/phase_capture_timestamps.py` | Timestamp payload and camera frame-timestamp normalization helpers used by the capture controller. |
 | `src/phase_capture_frame_filter.py` | Frame acceptance helper used by the capture controller. |
-| `src/check_measured_vs_expected_phase.py` | Non-interactive FFT-based check against expected phases of 0, 90, 180, 270, 360, and 450 degrees; saves JSON diagnostics and an annotated plot. |
-| `src/phase_analysis_new.py` | Six-frame phase reconstruction, unwrapping, and Zernike/aberration analysis, with saved images and an optional viewer/export. |
+| `src/phase_psi.py` | Shared six-frame PSI definitions and 90-degree / 60-degree wrapped-phase estimators. |
+| `src/check_measured_vs_expected_phase.py` | Non-interactive FFT-based check against phase positions recorded in each capture session; saves JSON diagnostics and an annotated plot. |
+| `src/phase_analysis_new.py` | Mode-selected six-frame phase reconstruction, unwrapping, and Zernike/aberration analysis, with saved images and an optional viewer/export. |
 | `pypico/main.py` | Pico/MicroPython firmware: triangle-wave timing, six trigger pulses, and USB serial commands/status. |
 
 ## Setup
@@ -59,6 +60,12 @@ Offline analysis needs only NumPy and Matplotlib.
    The controller temporarily uses external triggering, saves six frames under
    `src/captured_frames/phase_capture_*`, and automatically runs the phase checker.
    Sessions include a `*_raw_stack.npy`, PNG frames, and ROI/session metadata.
+   Choose the phase-step method in the Camera Status controls. The default
+   remains the 90-degree six-frame method; the alternative is the 60-degree
+   six-bucket method. Recalibrate separately after switching methods because
+   each method has its own target phase positions and saved trigger timings.
+   Captures record the selected method in their metadata, which analysis uses
+   automatically. Older captures without method metadata are treated as 90-degree.
 4. Inspect a saved session manually or run full analysis:
 
    ```bash

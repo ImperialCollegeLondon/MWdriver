@@ -1,18 +1,22 @@
 """
-Analyse the latest camera phase capture using the six-frame 90°
-phase-shifting algorithm.
-
-Expected frame phases:
-0, 90, 180, 270, 360, 450 degrees.
+Analyse a camera phase capture using the six-frame PSI algorithm recorded in
+its session metadata. Older captures default to the legacy 90-degree method.
 """
 
 from pathlib import Path
 from math import factorial
+import json
 import sys
 
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
+from phase_psi import (
+    ALGORITHMS as PSI_ALGORITHMS,
+    DEFAULT_ALGORITHM as DEFAULT_PSI_ALGORITHM,
+    get_algorithm_id_from_metadata,
+    reconstruct_phase,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -179,6 +183,15 @@ session_dir, raw_stack_path = find_capture_input()
 phase_result_dir = session_dir / "phase_analysis_result_images"
 phase_result_dir.mkdir(parents=True, exist_ok=True)
 
+metadata_files = sorted(session_dir.glob("*_metadata.json"))
+algorithm_id = DEFAULT_PSI_ALGORITHM
+if metadata_files:
+    with metadata_files[-1].open("r", encoding="utf-8") as metadata_file:
+        capture_metadata = json.load(metadata_file)
+    algorithm_id = get_algorithm_id_from_metadata(capture_metadata)
+psi_config = PSI_ALGORITHMS[algorithm_id]
+expected_phase_deg = psi_config["expected_phase_deg"]
+
 data = np.asarray(np.load(raw_stack_path), dtype=np.float64)
 
 if data.ndim != 3 or data.shape[0] != 6:
@@ -277,27 +290,28 @@ print(
 
 
 # ---------------------------------------------------------------------
-# Six-frame 90° wrapped-phase recovery (reference: Class A, N = 6)
-# tan(phi) = (4*I4 - 3*I2 - I6) / (I1 - 4*I3 + 3*I5)
+# Six-frame wrapped-phase recovery selected by capture metadata.
 # ---------------------------------------------------------------------
-I1 = data[0]  #     0 degrees
-I2 = data[1]  #    90 degrees
-I3 = data[2]  #   180 degrees
-I4 = data[3]  #   270 degrees
-I5 = data[4]  #   360 degrees
-I6 = data[5]  #   450 degrees
+if algorithm_id == DEFAULT_PSI_ALGORITHM:
+    phase_numerator = 4.0 * data[3] - 3.0 * data[1] - data[5]
+    phase_denominator = data[0] - 4.0 * data[2] + 3.0 * data[4]
+else:
+    phase_steps_rad = np.deg2rad(np.asarray(expected_phase_deg))
+    phase_numerator = -np.tensordot(
+        np.sin(phase_steps_rad), data, axes=(0, 0)
+    )
+    phase_denominator = np.tensordot(
+        np.cos(phase_steps_rad), data, axes=(0, 0)
+    )
 
-phase_numerator = 4.0 * I4 - 3.0 * I2 - I6
-phase_denominator = I1 - 4.0 * I3 + 3.0 * I5
-
-phase = np.arctan2(phase_numerator, phase_denominator)
+phase = reconstruct_phase(data, algorithm_id)
 phase = np.ma.masked_array(phase, mask=mask)
 
 for index, frame in enumerate(data):
     save_intermediate_png(
         session_dir / f"phase_intermediate_01_input_{index}.png",
         np.ma.masked_array(frame, mask=mask),
-        f"Input frame {index}: {index * 90} degrees",
+        f"Input frame {index}: {expected_phase_deg[index]:g} degrees",
         "gray",
     )
 
@@ -662,6 +676,8 @@ if export_path is not None:
     }
     output_arrays.update({
         "wrapped": phase.filled(np.nan).astype(np.float32),
+        "algorithm_id": np.asarray(algorithm_id),
+        "expected_phase_deg": np.asarray(expected_phase_deg, dtype=np.float32),
         "unwrapped": phaseUW.filled(np.nan).astype(np.float32),
         "tilt_removed": phaseT.filled(np.nan).astype(np.float32),
         "wavefront_aberration_nm": wavefront_aberration_nm.filled(
@@ -718,7 +734,7 @@ def show_result_viewer():
         results.append({
             "button": f"Phase {index}",
             "image": np.ma.masked_array(frame, mask=mask),
-            "title": f"Phase {index}: {index * 90} degrees",
+            "title": f"Phase {index}: {expected_phase_deg[index]:g} degrees",
             "cmap": "gray",
             "colorbar": "Intensity",
         })
@@ -727,7 +743,7 @@ def show_result_viewer():
         {
             "button": "Wrapped",
             "image": phase,
-            "title": "Six-frame 90° wrapped phase",
+            "title": f"Six-frame {psi_config['phase_step_deg']:g}° wrapped phase",
             "cmap": "twilight",
             "colorbar": "Wrapped phase (rad)",
             "vmin": -np.pi,

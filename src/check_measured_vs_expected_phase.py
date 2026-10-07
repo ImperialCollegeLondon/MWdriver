@@ -23,6 +23,11 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from phase_psi import (
+    ALGORITHMS as PSI_ALGORITHMS,
+    DEFAULT_ALGORITHM as DEFAULT_PSI_ALGORITHM,
+    get_algorithm_id_from_metadata,
+)
 
 
 # ============================================================
@@ -36,11 +41,6 @@ REFERENCE_CONFIG_PATH = (
     BASE_DIR
     /
     "phase_check_reference_config.json"
-)
-
-EXPECTED_PHASE_DEG = np.array(
-    [0.0, 90.0, 180.0, 270.0, 360.0, 450.0],
-    dtype=np.float64
 )
 
 OUTPUT_FIGURE_NAME = "measured_vs_expected_phase_annotated.png"
@@ -564,6 +564,16 @@ def create_annotated_plot(
 def main():
     session_dir = find_capture_folder()
     raw_stack_path = find_raw_stack(session_dir)
+    metadata_files = sorted(session_dir.glob("*_metadata.json"))
+    algorithm_id = DEFAULT_PSI_ALGORITHM
+    if metadata_files:
+        with metadata_files[-1].open("r", encoding="utf-8") as metadata_file:
+            capture_metadata = json.load(metadata_file)
+        algorithm_id = get_algorithm_id_from_metadata(capture_metadata)
+    expected_phase_deg = np.asarray(
+        PSI_ALGORITHMS[algorithm_id]["expected_phase_deg"],
+        dtype=np.float64,
+    )
 
     print("=" * 70)
     print("Repeatability-improved phase-point measurement check")
@@ -587,7 +597,7 @@ def main():
     phase_error_deg = (
         measured_phase_deg
         -
-        EXPECTED_PHASE_DEG
+        expected_phase_deg
     )
 
     actual_steps_deg = np.diff(
@@ -611,7 +621,7 @@ def main():
         print(
             f"Frame {index}: "
             f"measured = {measured_phase_deg[index]:.3f}°, "
-            f"expected = {EXPECTED_PHASE_DEG[index]:.3f}°, "
+            f"expected = {expected_phase_deg[index]:.3f}°, "
             f"error = {phase_error_deg[index]:+.3f}°"
         )
 
@@ -651,8 +661,9 @@ def main():
         ),
         "capture_folder": str(session_dir),
         "raw_stack_path": str(raw_stack_path),
+        "algorithm_id": algorithm_id,
         "expected_phase_deg": (
-            EXPECTED_PHASE_DEG.tolist()
+            expected_phase_deg.tolist()
         ),
         "measured_phase_deg": (
             measured_phase_deg.tolist()
@@ -701,7 +712,7 @@ def main():
 
     create_annotated_plot(
         measured_phase_deg=measured_phase_deg,
-        expected_phase_deg=EXPECTED_PHASE_DEG,
+        expected_phase_deg=expected_phase_deg,
         output_path=output_figure_path,
     )
 

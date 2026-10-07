@@ -56,6 +56,12 @@ from phase_capture_timestamps import (
     normalize_frame_framestamp,
 )
 from phase_capture_frame_filter import should_accept_phase_frame
+from phase_psi import (
+    ALGORITHMS as PSI_ALGORITHMS,
+    DEFAULT_ALGORITHM as DEFAULT_PSI_ALGORITHM,
+    LEGACY_90_DEG,
+    get_algorithm as get_psi_algorithm,
+)
 
 
 # ============================================================
@@ -113,10 +119,6 @@ PHASE_CAPTURE_EXPOSURE_MS = 10.0
 
 # Recalibration parameters.
 RECALIBRATION_FALLING_EDGE_MS = 650
-RECALIBRATION_TARGET_PHASE_DEG = np.array(
-    [0.0, 90.0, 180.0, 270.0, 360.0, 450.0],
-    dtype=np.float64,
-)
 RECALIBRATION_TRIGGER_JSON_PATH = os.path.join(
     SCRIPT_DIR,
     "phase_trigger_positions.json"
@@ -603,6 +605,7 @@ class PhaseSaveWorker(QObject):
         save_dir="captured_frames",
         session_prefix="phase_capture",
         trigger_positions_ms=None,
+        psi_algorithm_id=DEFAULT_PSI_ALGORITHM,
     ):
         super().__init__()
 
@@ -613,6 +616,7 @@ class PhaseSaveWorker(QObject):
         # Trigger positions (ms on the falling edge) actually sent to Pico
         # for this capture; used to plot measured phase vs. waveform voltage.
         self.trigger_positions_ms = trigger_positions_ms
+        self.psi_algorithm_id = psi_algorithm_id
 
         # Snapshot of the ROI that belongs to this phase-capture session.
         # True in roi_mask means retained / valid analysis area.
@@ -1076,6 +1080,10 @@ class PhaseSaveWorker(QObject):
                     )
                 },
                 "phase_capture_model": {
+                    "algorithm_id": self.psi_algorithm_id,
+                    "algorithm_name": get_psi_algorithm(
+                        self.psi_algorithm_id
+                    )["label"],
                     "trigger_source": "Pico GP12 hardware trigger",
                     "trigger_region": "selected one-phase-cycle window on the falling edge",
                     "phase_order": "phase_0 to phase_5",
@@ -1084,17 +1092,22 @@ class PhaseSaveWorker(QObject):
                         "Seven boundary points are defined, but only the first 6 are captured. "
                         "The final 6/6 boundary point is not captured."
                     ),
-                    "expected_phase_step_rad": "pi/2",
-                    "expected_phase_step_deg": 90.0,
-                    "expected_phase_positions_deg": [0, 90, 180, 270, 360, 450]
+                    "expected_phase_step_deg": get_psi_algorithm(
+                        self.psi_algorithm_id
+                    )["phase_step_deg"],
+                    "expected_phase_positions_deg": list(
+                        get_psi_algorithm(self.psi_algorithm_id)[
+                            "expected_phase_deg"
+                        ]
+                    ),
                 },
                 "note": (
                     "Frames are ordered as phase_0 to phase_5. "
                     "They are externally triggered by Pico GP12 within a selected one-phase-cycle window "
                     "on the falling edge of one triangle wave. "
                     "The selected one-cycle window is divided into six equal intervals. "
-                    "Only the first six boundary points are captured, so the intended phase step is 90 degrees. "
-                    "The final 6/6 boundary point at 450 degrees is not captured. "
+                    "Only the first six boundary points are captured, giving expected phase positions "
+                    f"{', '.join(str(int(value)) for value in get_psi_algorithm(self.psi_algorithm_id)['expected_phase_deg'])} degrees. "
                     "The camera returns to live view after capture."
                 )
             }
@@ -1295,6 +1308,9 @@ class ThorlabsCameraViewer(QObject):
         self.last_trigger_update_ack_positions_ms = None
         self.last_trigger_update_error_text = None
         self.active_trigger_positions_ms = None
+        self.selected_psi_algorithm_id = DEFAULT_PSI_ALGORITHM
+        self.last_selected_psi_algorithm_id = DEFAULT_PSI_ALGORITHM
+        self.last_capture_algorithm_id = DEFAULT_PSI_ALGORITHM
         # Trigger positions actually sent to Pico for the in-progress capture,
         # used to plot measured phase vs. waveform voltage after saving.
         self.last_capture_trigger_positions_ms = None
@@ -1323,10 +1339,27 @@ class ThorlabsCameraViewer(QObject):
             ) as file:
                 payload = json.load(file)
 
-            positions = payload.get("trigger_positions_ms")
+            calibrations = payload.get("calibrations", {})
+            calibration = calibrations.get(self.selected_psi_algorithm_id)
+            if calibration is None and "trigger_positions_ms" in payload:
+                if self.selected_psi_algorithm_id != LEGACY_90_DEG:
+                    self.active_trigger_positions_ms = None
+                    return None
+                calibration = payload
+
+            if calibration is None:
+                self.active_trigger_positions_ms = None
+                return None
+
+            positions = calibration.get("trigger_positions_ms")
             positions = self.validate_trigger_positions_ms(positions)
             self.active_trigger_positions_ms = positions
-            print("Loaded active trigger positions:", positions)
+            print(
+                "Loaded active trigger positions for",
+                self.selected_psi_algorithm_id,
+                ":",
+                positions,
+            )
             return positions
 
         except Exception as error:
@@ -1336,6 +1369,41 @@ class ThorlabsCameraViewer(QObject):
             )
             self.active_trigger_positions_ms = None
             return None
+
+    def get_recalibration_target_phase_deg(self):
+        return np.asarray(
+            get_psi_algorithm(self.selected_psi_algorithm_id)["expected_phase_deg"],
+            dtype=np.float64,
+        )
+
+    def on_psi_algorithm_changed(self, index):
+        algorithm_id = self.psi_algorithm_selector.itemData(index)
+        if algorithm_id is None:
+            return
+
+        if self.recalibration_active:
+            previous_index = self.psi_algorithm_selector.findData(
+                self.last_selected_psi_algorithm_id
+            )
+            self.psi_algorithm_selector.blockSignals(True)
+            self.psi_algorithm_selector.setCurrentIndex(previous_index)
+            self.psi_algorithm_selector.blockSignals(False)
+            return
+
+        self.selected_psi_algorithm_id = algorithm_id
+        self.last_selected_psi_algorithm_id = algorithm_id
+        self.active_trigger_positions_ms = None
+        positions = self.load_active_trigger_positions_from_json()
+        if positions is None:
+            self.status_label.setText(
+                "Status: No calibration saved for "
+                f"{get_psi_algorithm(algorithm_id)['label']}"
+            )
+        else:
+            self.status_label.setText(
+                "Status: Loaded calibrated triggers for "
+                f"{get_psi_algorithm(algorithm_id)['label']}"
+            )
 
     def init_camera(self):
         print("Searching for Thorlabs camera...")
@@ -1729,7 +1797,7 @@ class ThorlabsCameraViewer(QObject):
                 pass
 
             w = max(180, min(760, panel_width - 36))
-            h = 95
+            h = 145
 
             self.camera_adjust_widget.setGeometry(x, y, w, h)
             self.camera_adjust_widget.setVisible(True)
@@ -2210,6 +2278,20 @@ class ThorlabsCameraViewer(QObject):
         status_title_label = QLabel("Camera Status:")
         status_title_label.setStyleSheet("font-weight: bold;")
 
+        self.psi_algorithm_label = QLabel("Phase-step method:")
+        self.psi_algorithm_selector = QComboBox()
+        for algorithm_id, algorithm in PSI_ALGORITHMS.items():
+            self.psi_algorithm_selector.addItem(
+                algorithm["label"],
+                algorithm_id,
+            )
+        self.psi_algorithm_selector.setCurrentIndex(
+            self.psi_algorithm_selector.findData(self.selected_psi_algorithm_id)
+        )
+        self.psi_algorithm_selector.currentIndexChanged.connect(
+            self.on_psi_algorithm_changed
+        )
+
         self.status_label = QLabel("Status: Stopped")
         self.fps_label = QLabel("FPS: --")
         self.record_label = QLabel("Recorded: 0")
@@ -2306,6 +2388,8 @@ class ThorlabsCameraViewer(QObject):
         gain_layout.addWidget(self.gain_spinbox)
 
         adjust_layout.addWidget(title_label)
+        adjust_layout.addWidget(self.psi_algorithm_label)
+        adjust_layout.addWidget(self.psi_algorithm_selector)
         adjust_layout.addLayout(exposure_layout)
         adjust_layout.addLayout(gain_layout)
 
@@ -3347,6 +3431,7 @@ class ThorlabsCameraViewer(QObject):
             self.last_trigger_update_error_text = text
 
     def start_phase_capture_session(self):
+        self.last_capture_algorithm_id = self.selected_psi_algorithm_id
         print("====================================")
         print("Phase capture session started")
         print("Current camera mode:", self.current_camera_mode)
@@ -4096,6 +4181,7 @@ class ThorlabsCameraViewer(QObject):
             save_dir=SAVE_DIR,
             session_prefix=session_prefix,
             trigger_positions_ms=self.last_capture_trigger_positions_ms,
+            psi_algorithm_id=self.last_capture_algorithm_id,
         )
 
         self.save_worker.moveToThread(self.save_thread)
@@ -4261,6 +4347,12 @@ class ThorlabsCameraViewer(QObject):
             )
 
     def create_phase_analysis_controls(self):
+        phase_positions = self.phase_analysis_results.get("expected_phase_deg")
+        if phase_positions is None:
+            phase_positions = PSI_ALGORITHMS[DEFAULT_PSI_ALGORITHM][
+                "expected_phase_deg"
+            ]
+        phase_positions = np.asarray(phase_positions).reshape(-1)
         aberration_label = "Lens aberration (nm OPD)"
         aberration_rms = self.phase_analysis_results.get(
             "wavefront_aberration_rms_nm"
@@ -4275,12 +4367,12 @@ class ThorlabsCameraViewer(QObject):
             )
 
         result_options = [
-            ("Phase 0 (0 deg)", "phase_0"),
-            ("Phase 1 (60 deg)", "phase_1"),
-            ("Phase 2 (120 deg)", "phase_2"),
-            ("Phase 3 (180 deg)", "phase_3"),
-            ("Phase 4 (240 deg)", "phase_4"),
-            ("Phase 5 (300 deg)", "phase_5"),
+            (
+                f"Phase {index} ({phase_positions[index]:g} deg)",
+                f"phase_{index}",
+            )
+            for index in range(PHASE_CAPTURE_COUNT)
+        ] + [
             ("Wrapped phase", "wrapped"),
             ("Unwrapped phase", "unwrapped"),
             ("Tilt removed", "tilt_removed"),
@@ -4494,6 +4586,15 @@ class ThorlabsCameraViewer(QObject):
                 )
                 print("Start Phase Capture trigger-update warning:", error)
 
+        if self.selected_psi_algorithm_id != LEGACY_90_DEG:
+            self.status_label.setText(
+                "Status: Calibrate this PSI mode before capturing"
+            )
+            self.phase_label.setText(
+                "Phase Capture: No calibration saved for selected mode"
+            )
+            return
+
         self.status_label.setText(
             "Status: Sending Start Phase Capture command to Pico"
         )
@@ -4659,14 +4760,15 @@ class ThorlabsCameraViewer(QObject):
             if measured[index] <= measured[index - 1]:
                 measured[index] = measured[index - 1] + 1e-3
 
-        if measured[-1] < float(RECALIBRATION_TARGET_PHASE_DEG[-1]):
+        target_phase_deg = self.get_recalibration_target_phase_deg()
+        if measured[-1] < float(target_phase_deg[-1]):
             raise ValueError(
                 "Coarse calibration span is too short: "
                 f"last measured phase {measured[-1]:.2f} deg"
             )
 
         target_positions = np.interp(
-            RECALIBRATION_TARGET_PHASE_DEG,
+            target_phase_deg,
             measured,
             coarse_positions,
         )
@@ -4743,9 +4845,10 @@ class ThorlabsCameraViewer(QObject):
         coarse_session_dir,
     ):
         refined_positions = self.validate_trigger_positions_ms(refined_positions_ms)
-
-        payload = {
+        algorithm = get_psi_algorithm(self.selected_psi_algorithm_id)
+        calibration = {
             "calibration_type": "six_point_recalibration",
+            "algorithm_id": self.selected_psi_algorithm_id,
             "edge": "falling",
             "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             "coarse_session_dir": coarse_session_dir,
@@ -4756,16 +4859,37 @@ class ThorlabsCameraViewer(QObject):
                 float(value) for value in measured_phase_deg
             ],
             "expected_phase_deg": [
-                float(value) for value in RECALIBRATION_TARGET_PHASE_DEG
+                float(value) for value in self.get_recalibration_target_phase_deg()
             ],
             "trigger_positions_ms": [
                 int(value) for value in refined_positions
             ],
             "note": (
                 "Generated from one coarse six-point capture over the full "
-                "falling edge, then inverted onto 0/60/120/180/240/300 deg."
+                "falling edge, then inverted onto "
+                f"{', '.join(str(int(value)) for value in algorithm['expected_phase_deg'])} deg."
             ),
         }
+
+        calibrations = {}
+        if os.path.exists(RECALIBRATION_TRIGGER_JSON_PATH):
+            try:
+                with open(
+                    RECALIBRATION_TRIGGER_JSON_PATH,
+                    "r",
+                    encoding="utf-8",
+                ) as file:
+                    previous_payload = json.load(file)
+                calibrations.update(previous_payload.get("calibrations", {}))
+                if (
+                    not calibrations
+                    and "trigger_positions_ms" in previous_payload
+                ):
+                    calibrations[LEGACY_90_DEG] = previous_payload
+            except (OSError, json.JSONDecodeError):
+                pass
+        calibrations[self.selected_psi_algorithm_id] = calibration
+        payload = {"calibrations": calibrations}
 
         with open(
             RECALIBRATION_TRIGGER_JSON_PATH,
@@ -4786,6 +4910,7 @@ class ThorlabsCameraViewer(QObject):
             raise RuntimeError("Pico worker is not available.")
 
         positions = self.validate_trigger_positions_ms(trigger_positions_ms)
+        self.last_capture_algorithm_id = self.selected_psi_algorithm_id
 
         self.last_trigger_update_ack_positions_ms = None
         self.last_trigger_update_error_text = None
@@ -4896,8 +5021,9 @@ class ThorlabsCameraViewer(QObject):
                 monotonic_phase[index - 1] + 1e-3,
             )
 
+        target_phase_deg = self.get_recalibration_target_phase_deg()
         desired_positions = np.interp(
-            RECALIBRATION_TARGET_PHASE_DEG,
+            target_phase_deg,
             monotonic_phase,
             current_positions,
         )
@@ -4916,7 +5042,7 @@ class ThorlabsCameraViewer(QObject):
             (monotonic_phase[-1] - monotonic_phase[-2])
         )
 
-        for index, target_phase in enumerate(RECALIBRATION_TARGET_PHASE_DEG):
+        for index, target_phase in enumerate(target_phase_deg):
             if target_phase < monotonic_phase[0]:
                 desired_positions[index] = (
                     current_positions[0]
@@ -4933,7 +5059,7 @@ class ThorlabsCameraViewer(QObject):
         max_abs_error = float(
             np.max(
                 np.abs(
-                    measured - RECALIBRATION_TARGET_PHASE_DEG
+                    measured - target_phase_deg
                 )
             )
         )
@@ -5127,7 +5253,9 @@ class ThorlabsCameraViewer(QObject):
             )
 
         measured_for_error = measured - measured[0]
-        phase_error = measured_for_error - RECALIBRATION_TARGET_PHASE_DEG
+        phase_error = (
+            measured_for_error - self.get_recalibration_target_phase_deg()
+        )
         abs_phase_error = np.abs(phase_error)
 
         count_error_over_5 = int(
