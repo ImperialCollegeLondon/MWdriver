@@ -3,6 +3,9 @@ venv/
 env/
 ENV/
 
+src/captured_frames/
+src/phase_trigger_positions.json
+
 __pycache__/
 *.py[cod]
 

@@ -1,26 +1,15 @@
 import sys
 import time
 import os
+import importlib.abc
 import json
 import queue
 import copy
 import subprocess
 import ast
 import shutil
-import numpy as np
-import serial
-import imageio.v2 as imageio
 
-from pylablib.devices import Thorlabs
-import napari
-
-import matplotlib.pyplot as plt
-
-from phase_capture_timestamps import (
-    build_phase_timestamp_payload,
-    normalize_frame_framestamp,
-)
-from phase_capture_frame_filter import should_accept_phase_frame
+os.environ["QT_API"] = "pyside6"
 
 from qtpy.QtCore import QObject, QThread, Signal, QTimer, Qt, QEvent, QCoreApplication
 from qtpy.QtGui import QAction
@@ -38,12 +27,42 @@ from qtpy.QtWidgets import (
     QAbstractButton,
 )
 
+import numpy as np
+import serial
+import imageio.v2 as imageio
+
+class _BlockPyQt5Import(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "PyQt5" or fullname.startswith("PyQt5."):
+            raise ModuleNotFoundError(
+                "PyQt5 is disabled because this application uses PySide6.",
+                name=fullname,
+            )
+
+
+_pyqt5_import_blocker = _BlockPyQt5Import()
+sys.meta_path.insert(0, _pyqt5_import_blocker)
+try:
+    from pylablib.devices import Thorlabs
+finally:
+    sys.meta_path.remove(_pyqt5_import_blocker)
+
+import napari
+
+import matplotlib.pyplot as plt
+
+from phase_capture_timestamps import (
+    build_phase_timestamp_payload,
+    normalize_frame_framestamp,
+)
+from phase_capture_frame_filter import should_accept_phase_frame
+
 
 # ============================================================
 # Pico / Phase Capture å‚æ•°
 # ============================================================
 
-PICO_PORT = "COM3"
+PICO_PORT = "COM4"
 PICO_BAUDRATE = 115200
 
 PHASE_CAPTURE_COUNT = 6
@@ -91,10 +110,6 @@ EXTERNAL_TRIGGER_EDGE = "rise"
 # Use a shorter exposure only during phase capture, then restore the user exposure
 # when returning to live view.
 PHASE_CAPTURE_EXPOSURE_MS = 10.0
-
-# Shift the complete formal six-frame capture window away from the triangle
-# peak without changing the calibrated spacing between its trigger points.
-FORMAL_CAPTURE_DELAY_MS = 20
 
 # Recalibration parameters.
 RECALIBRATION_FALLING_EDGE_MS = 650
@@ -4491,11 +4506,7 @@ class ThorlabsCameraViewer(QObject):
         self.pico_worker.request_start_phase_from_gui()
 
     def build_formal_capture_positions_ms(self, trigger_positions_ms):
-        positions = [
-            int(round(value)) + FORMAL_CAPTURE_DELAY_MS
-            for value in trigger_positions_ms
-        ]
-        return self.validate_trigger_positions_ms(positions)
+        return self.validate_trigger_positions_ms(trigger_positions_ms)
 
     def build_even_falling_edge_positions_ms(self):
         """
