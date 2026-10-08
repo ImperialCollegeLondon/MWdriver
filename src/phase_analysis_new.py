@@ -211,7 +211,8 @@ if roi_mask_path.exists():
         )
     mask = ~valid_mask
 else:
-    mask = np.zeros((sizey, sizex), dtype=bool)
+    valid_mask = np.ones((sizey, sizex), dtype=bool)
+    mask = ~valid_mask
 
 if np.all(mask):
     raise ValueError("The capture ROI mask contains no valid pixels.")

@@ -56,6 +56,9 @@ Offline analysis needs only NumPy and Matplotlib.
    python src\camera.py
    ```
 
+   MWdriver controls appear in a separate, scrollable **MWdriver Controls**
+   dock on the right; Napari's layer list remains separate on the left.
+
 3. Set the camera exposure and ROI, then choose **Start Phase Capture**.
    The controller temporarily uses external triggering, saves six frames under
    `src/captured_frames/phase_capture_*`, and automatically runs the phase checker.

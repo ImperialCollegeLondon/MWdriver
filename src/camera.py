@@ -25,6 +25,7 @@ from qtpy.QtWidgets import (
     QFormLayout,
     QGridLayout,
     QAbstractButton,
+    QScrollArea,
 )
 
 import numpy as np
@@ -1262,6 +1263,10 @@ class ThorlabsCameraViewer(QObject):
         self.camera_adjust_widget = None
         self.camera_status_widget = None
         self.phase_analysis_controls_widget = None
+        self.phase_analysis_title_label = None
+        self.mwdriver_controls_scroll = None
+        self.mwdriver_controls_content = None
+        self.mwdriver_controls_layout = None
         self.phase_analysis_selector = None
         self.view_phase_analysis_button = None
         self.controls_container = None
@@ -1305,6 +1310,7 @@ class ThorlabsCameraViewer(QObject):
         self.phase_analysis_source_stack_name = None
         self.phase_analysis_results = {}
         self.phase_analysis_layer = None
+        self.phase_analysis_layer_records = []
         self.phase_analysis_view_active = False
         self.phase_capture_time_series_layers = []
         self.pending_phase_capture_layer = None
@@ -1323,6 +1329,7 @@ class ThorlabsCameraViewer(QObject):
         self.init_controls()
         self.init_roi_controls()
         self.init_profile_controls()
+        self.init_mwdriver_controls_dock()
 
         self.load_active_trigger_positions_from_json()
 
@@ -1493,6 +1500,9 @@ class ThorlabsCameraViewer(QObject):
         QTimer.singleShot(1000, self.simplify_napari_interface)
 
         try:
+            self.viewer.layers.events.removed.connect(
+                self.on_phase_analysis_layer_removed
+            )
             self.viewer.layers.selection.events.active.connect(
                 self.on_active_layer_changed
             )
@@ -1511,30 +1521,48 @@ class ThorlabsCameraViewer(QObject):
     def on_active_layer_changed(self, event=None):
         try:
             active_layer = self.viewer.layers.selection.active
+            analysis_record = next(
+                (
+                    record
+                    for record in self.phase_analysis_layer_records
+                    if record["layer"] is active_layer
+                ),
+                None,
+            )
 
-            if active_layer is self.layer:
+            if analysis_record is not None:
+                self.phase_analysis_layer = active_layer
+                self.phase_analysis_results = analysis_record["results"]
+                self.phase_analysis_source_stack_name = analysis_record["source_name"]
+                self.phase_analysis_view_active = True
+                self.create_phase_analysis_controls(
+                    selected_key=analysis_record["selected_key"]
+                )
+                self.layer.visible = False
+                self.roi_layer.visible = False
+                for time_series_layer in self.phase_capture_time_series_layers:
+                    time_series_layer.visible = False
+                for record in self.phase_analysis_layer_records:
+                    record["layer"].visible = record is analysis_record
+                if self.view_phase_analysis_button is not None:
+                    self.view_phase_analysis_button.setText("Return to Camera Preview")
+            elif active_layer is self.layer:
                 self.show_camera_preview()
             elif active_layer is self.roi_layer:
                 self.layer.visible = True
                 self.roi_layer.visible = True
-                if self.phase_analysis_layer is not None:
-                    self.phase_analysis_layer.visible = False
+                for record in self.phase_analysis_layer_records:
+                    record["layer"].visible = False
                 for time_series_layer in self.phase_capture_time_series_layers:
                     time_series_layer.visible = False
             elif active_layer in self.phase_capture_time_series_layers:
                 self.layer.visible = False
                 if self.roi_layer is not None:
                     self.roi_layer.visible = True
-                if self.phase_analysis_layer is not None:
-                    self.phase_analysis_layer.visible = False
+                for record in self.phase_analysis_layer_records:
+                    record["layer"].visible = False
                 for time_series_layer in self.phase_capture_time_series_layers:
                     time_series_layer.visible = time_series_layer is active_layer
-            elif active_layer is self.phase_analysis_layer:
-                self.layer.visible = False
-                if self.roi_layer is not None:
-                    self.roi_layer.visible = False
-                for time_series_layer in self.phase_capture_time_series_layers:
-                    time_series_layer.visible = False
 
             if (
                 self.profile_enabled
@@ -1555,6 +1583,14 @@ class ThorlabsCameraViewer(QObject):
         QTimer.singleShot(250, self.place_camera_adjust_controls_in_layer_controls)
         QTimer.singleShot(300, self.place_camera_status_controls_in_layer_controls)
 
+    def on_phase_analysis_layer_removed(self, event):
+        self.phase_analysis_layer_records = [
+            record
+            for record in self.phase_analysis_layer_records
+            if record["layer"] is not event.value
+        ]
+        if event.value is self.phase_analysis_layer:
+            self.phase_analysis_layer = None
 
     def simplify_napari_interface(self):
         """
@@ -1760,167 +1796,52 @@ class ThorlabsCameraViewer(QObject):
         label.setVisible(visible)
 
     def place_profile_controls_in_layer_controls(self):
-        if self.profile_controls_widget is None:
-            return
-
-        try:
-            qt_viewer = self.viewer.window._qt_viewer
-            controls_container = qt_viewer.controls
-        except Exception as e:
-            print("Cannot access layer controls:", e)
-            return
-
-        try:
-            self.profile_controls_widget.setParent(controls_container)
-
-            panel_width = self.get_left_controls_available_width()
-
-            x = 18
-            y = 175
-            w = max(180, min(760, panel_width - 36))
-            h = 125
-
-            self.profile_controls_widget.setGeometry(x, y, w, h)
-            self.profile_controls_widget.setVisible(True)
-            self.profile_controls_widget.raise_()
-
-            controls_container.setMinimumHeight(760)
-            controls_container.updateGeometry()
-            controls_container.update()
-
-        except Exception as e:
-            print("Place profile controls error:", e)
+        self.add_widget_to_mwdriver_dock(self.profile_controls_widget)
 
     def place_camera_adjust_controls_in_layer_controls(self):
-        """
-        Place compact Exposure/Gain controls into the empty area under
-        Intensity Profile Control in the left layer-controls panel.
-        """
-
-        if self.camera_adjust_widget is None:
-            return
-
-        try:
-            qt_viewer = self.viewer.window._qt_viewer
-            controls_container = qt_viewer.controls
-        except Exception as e:
-            print("Cannot access layer controls for camera adjustment:", e)
-            return
-
-        try:
-            self.camera_adjust_widget.setParent(controls_container)
-
-            panel_width = self.get_left_controls_available_width()
-
-            x = 18
-            y = 335
-
-            # Automatically place it just below the intensity-profile panel.
-            try:
-                if self.profile_controls_widget is not None:
-                    profile_bottom = self.profile_controls_widget.geometry().bottom()
-                    y = profile_bottom + 12
-            except Exception:
-                pass
-
-            w = max(180, min(760, panel_width - 36))
-            h = 145
-
-            self.camera_adjust_widget.setGeometry(x, y, w, h)
-            self.camera_adjust_widget.setVisible(True)
-            self.camera_adjust_widget.raise_()
-
-            controls_container.setMinimumHeight(760)
-            controls_container.updateGeometry()
-            controls_container.update()
-
-        except Exception as e:
-            print("Place camera adjustment controls error:", e)
+        self.add_widget_to_mwdriver_dock(self.camera_adjust_widget)
 
     def place_camera_status_controls_in_layer_controls(self):
-        """
-        Place compact camera status information into the left layer-controls panel.
-        This removes the need for the full-width bottom dock and gives the
-        camera preview more vertical display area.
-        """
-
-        if self.camera_status_widget is None:
-            return
-
-        try:
-            qt_viewer = self.viewer.window._qt_viewer
-            controls_container = qt_viewer.controls
-        except Exception as e:
-            print("Cannot access layer controls for camera status:", e)
-            return
-
-        try:
-            self.camera_status_widget.setParent(controls_container)
-
-            panel_width = self.get_left_controls_available_width()
-
-            x = 18
-            y = 435
-
-            # Automatically place it just below the Camera Adjustment panel.
-            try:
-                if self.camera_adjust_widget is not None:
-                    adjust_bottom = self.camera_adjust_widget.geometry().bottom()
-                    y = adjust_bottom + 12
-            except Exception:
-                pass
-
-            w = max(180, min(760, panel_width - 36))
-            h = 185
-
-            self.camera_status_widget.setGeometry(x, y, w, h)
-            self.camera_status_widget.setVisible(True)
-            self.camera_status_widget.raise_()
-
-            controls_container.setMinimumHeight(760)
-            controls_container.updateGeometry()
-            controls_container.update()
-
-        except Exception as e:
-            print("Place camera status controls error:", e)
+        self.add_widget_to_mwdriver_dock(self.camera_status_widget)
 
     def place_phase_analysis_controls_in_layer_controls(self):
-        if self.phase_analysis_controls_widget is None:
+        self.add_widget_to_mwdriver_dock(self.phase_analysis_controls_widget)
+
+    def init_mwdriver_controls_dock(self):
+        self.mwdriver_controls_scroll = QScrollArea()
+        self.mwdriver_controls_scroll.setObjectName("mwdriver_controls_scroll")
+        self.mwdriver_controls_scroll.setWidgetResizable(True)
+        self.mwdriver_controls_scroll.setMinimumWidth(300)
+
+        self.mwdriver_controls_content = QWidget()
+        self.mwdriver_controls_content.setObjectName("mwdriver_controls_content")
+        self.mwdriver_controls_layout = QVBoxLayout()
+        self.mwdriver_controls_layout.setContentsMargins(10, 10, 10, 10)
+        self.mwdriver_controls_layout.setSpacing(12)
+        self.mwdriver_controls_content.setLayout(self.mwdriver_controls_layout)
+        self.mwdriver_controls_scroll.setWidget(self.mwdriver_controls_content)
+
+        self.viewer.window.add_dock_widget(
+            self.mwdriver_controls_scroll,
+            name="MWdriver Controls",
+            area="right",
+        )
+
+        self.add_widget_to_mwdriver_dock(self.camera_adjust_widget)
+        self.add_widget_to_mwdriver_dock(self.profile_controls_widget)
+        self.add_widget_to_mwdriver_dock(self.camera_status_widget)
+
+    def add_widget_to_mwdriver_dock(self, widget):
+        if widget is None or self.mwdriver_controls_layout is None:
             return
-
-        try:
-            controls_container = self.viewer.window._qt_viewer.controls
-        except Exception as error:
-            print("Cannot access layer controls for phase analysis:", error)
-            return
-
-        try:
-            self.phase_analysis_controls_widget.setParent(controls_container)
-            panel_width = self.get_left_controls_available_width()
-
-            x = 18
-            y = 635
-            if self.camera_status_widget is not None:
-                y = self.camera_status_widget.geometry().bottom() + 12
-
-            width = max(180, min(760, panel_width - 36))
-            height = 110
-
-            self.phase_analysis_controls_widget.setGeometry(
-                x,
-                y,
-                width,
-                height,
+        if self.mwdriver_controls_layout.indexOf(widget) < 0:
+            self.mwdriver_controls_layout.addWidget(
+                widget,
+                0,
+                Qt.AlignLeft | Qt.AlignTop,
             )
-            self.phase_analysis_controls_widget.setVisible(True)
-            self.phase_analysis_controls_widget.raise_()
-
-            controls_container.setMinimumHeight(max(880, y + height + 20))
-            controls_container.updateGeometry()
-            controls_container.update()
-
-        except Exception as error:
-            print("Place phase analysis controls error:", error)
+        widget.setVisible(True)
+        self.mwdriver_controls_content.adjustSize()
 
     def install_controls_resize_filter(self):
         """
@@ -2701,8 +2622,8 @@ class ThorlabsCameraViewer(QObject):
     def prepare_roi_drawing(self):
         self.layer.visible = True
         self.roi_layer.visible = True
-        if self.phase_analysis_layer is not None:
-            self.phase_analysis_layer.visible = False
+        for record in self.phase_analysis_layer_records:
+            record["layer"].visible = False
         for time_series_layer in self.phase_capture_time_series_layers:
             time_series_layer.visible = False
         self.phase_analysis_view_active = False
@@ -4216,8 +4137,8 @@ class ThorlabsCameraViewer(QObject):
         self.pending_phase_capture_layer = time_series_layer
 
         self.layer.visible = False
-        if self.phase_analysis_layer is not None:
-            self.phase_analysis_layer.visible = False
+        for record in self.phase_analysis_layer_records:
+            record["layer"].visible = False
         if self.roi_layer is not None:
             self.roi_layer.visible = True
         for previous_layer in self.phase_capture_time_series_layers[:-1]:
@@ -4479,9 +4400,10 @@ class ThorlabsCameraViewer(QObject):
                     for key in result_file.files
                 }
 
-            self.create_phase_analysis_controls()
-            if self.phase_analysis_view_active:
-                self.show_selected_phase_analysis_result()
+            self.phase_analysis_view_active = True
+            self.create_phase_analysis_controls(selected_key="wrapped")
+            self.show_selected_phase_analysis_result(create_new_layer=True)
+            self.view_phase_analysis_button.setText("Return to Camera Preview")
             self.status_label.setText(
                 "Status: Phase analysis ready; use the controls below"
             )
@@ -4491,13 +4413,7 @@ class ThorlabsCameraViewer(QObject):
                 f"Status: Failed to load phase analysis results: {error}"
             )
 
-    def create_phase_analysis_controls(self):
-        phase_positions = self.phase_analysis_results.get("expected_phase_deg")
-        if phase_positions is None:
-            phase_positions = PSI_ALGORITHMS[DEFAULT_PSI_ALGORITHM][
-                "expected_phase_deg"
-            ]
-        phase_positions = np.asarray(phase_positions).reshape(-1)
+    def create_phase_analysis_controls(self, selected_key=None):
         aberration_label = "Lens aberration (nm OPD)"
         aberration_rms = self.phase_analysis_results.get(
             "wavefront_aberration_rms_nm"
@@ -4512,12 +4428,6 @@ class ThorlabsCameraViewer(QObject):
             )
 
         result_options = [
-            (
-                f"Phase {index} ({phase_positions[index]:g} deg)",
-                f"phase_{index}",
-            )
-            for index in range(PHASE_CAPTURE_COUNT)
-        ] + [
             ("Wrapped phase", "wrapped"),
             ("Unwrapped phase", "unwrapped"),
             ("Tilt removed", "tilt_removed"),
@@ -4547,14 +4457,14 @@ class ThorlabsCameraViewer(QObject):
             layout.setContentsMargins(4, 4, 4, 4)
             layout.setSpacing(5)
 
-            title_label = QLabel("Phase Analysis Results:")
-            title_label.setStyleSheet("font-weight: bold;")
+            self.phase_analysis_title_label = QLabel()
+            self.phase_analysis_title_label.setStyleSheet("font-weight: bold;")
             self.phase_analysis_selector = QComboBox()
             self.view_phase_analysis_button = QPushButton(
                 "View Analysis Results"
             )
 
-            layout.addWidget(title_label)
+            layout.addWidget(self.phase_analysis_title_label)
             layout.addWidget(self.phase_analysis_selector)
             layout.addWidget(self.view_phase_analysis_button)
             self.phase_analysis_controls_widget.setLayout(layout)
@@ -4566,17 +4476,21 @@ class ThorlabsCameraViewer(QObject):
                 self.toggle_phase_analysis_view
             )
 
-        current_key = self.phase_analysis_selector.currentData()
+        self.phase_analysis_title_label.setText(
+            f"Review: {self.phase_analysis_source_stack_name or 'analysis'}"
+        )
+        current_key = selected_key or self.phase_analysis_selector.currentData()
         self.phase_analysis_selector.blockSignals(True)
         self.phase_analysis_selector.clear()
         for label, key in result_options:
             if key in self.phase_analysis_results:
                 self.phase_analysis_selector.addItem(label, key)
 
-        if current_key is not None:
-            current_index = self.phase_analysis_selector.findData(current_key)
-            if current_index >= 0:
-                self.phase_analysis_selector.setCurrentIndex(current_index)
+        current_index = self.phase_analysis_selector.findData(current_key)
+        if current_index < 0 and self.phase_analysis_selector.count() > 0:
+            current_index = 0
+        if current_index >= 0:
+            self.phase_analysis_selector.setCurrentIndex(current_index)
         self.phase_analysis_selector.blockSignals(False)
         self.view_phase_analysis_button.setEnabled(True)
 
@@ -4586,7 +4500,7 @@ class ThorlabsCameraViewer(QObject):
         if index >= 0 and self.phase_analysis_view_active:
             self.show_selected_phase_analysis_result()
 
-    def show_selected_phase_analysis_result(self):
+    def show_selected_phase_analysis_result(self, create_new_layer=False):
         result_key = self.phase_analysis_selector.currentData()
         if result_key not in self.phase_analysis_results:
             return
@@ -4614,29 +4528,49 @@ class ThorlabsCameraViewer(QObject):
                 if contrast_limits[0] == contrast_limits[1]:
                     contrast_limits = None
 
-        layer_is_rgb = bool(
-            getattr(self.phase_analysis_layer, "rgb", False)
+        current_record = next(
+            (
+                record
+                for record in self.phase_analysis_layer_records
+                if record["layer"] is self.phase_analysis_layer
+            ),
+            None,
         )
-        if (
-            self.phase_analysis_layer is not None
-            and layer_is_rgb != is_rgb
-        ):
-            self.viewer.layers.remove(self.phase_analysis_layer)
-            self.phase_analysis_layer = None
+        layer_is_rgb = bool(getattr(self.phase_analysis_layer, "rgb", False))
+        replace_layer = (
+            create_new_layer
+            or self.phase_analysis_layer is None
+            or current_record is None
+            or layer_is_rgb != is_rgb
+        )
 
-        if self.phase_analysis_layer is None and is_rgb:
-            self.phase_analysis_layer = self.viewer.add_image(
-                result_data,
-                name=layer_name,
-                rgb=True,
-            )
-        elif self.phase_analysis_layer is None:
-            self.phase_analysis_layer = self.viewer.add_image(
-                result_data,
-                name=layer_name,
-                colormap=colormap,
-                contrast_limits=contrast_limits,
-            )
+        if replace_layer:
+            if self.phase_analysis_layer is not None and not create_new_layer:
+                try:
+                    self.viewer.layers.remove(self.phase_analysis_layer)
+                except ValueError:
+                    pass
+            if is_rgb:
+                analysis_layer = self.viewer.add_image(
+                    result_data,
+                    name=layer_name,
+                    rgb=True,
+                )
+            else:
+                analysis_layer = self.viewer.add_image(
+                    result_data,
+                    name=layer_name,
+                    colormap=colormap,
+                    contrast_limits=contrast_limits,
+                )
+            self.phase_analysis_layer = analysis_layer
+            current_record = {
+                "layer": analysis_layer,
+                "results": self.phase_analysis_results,
+                "source_name": source_name,
+                "selected_key": result_key,
+            }
+            self.phase_analysis_layer_records.append(current_record)
         else:
             self.phase_analysis_layer.data = result_data
             self.phase_analysis_layer.name = layer_name
@@ -4644,18 +4578,22 @@ class ThorlabsCameraViewer(QObject):
                 self.phase_analysis_layer.colormap = colormap
                 if contrast_limits is not None:
                     self.phase_analysis_layer.contrast_limits = contrast_limits
+            current_record["selected_key"] = result_key
 
         self.phase_analysis_layer.visible = True
         self.layer.visible = False
         self.roi_layer.visible = False
+        for record in self.phase_analysis_layer_records:
+            if record["layer"] is not self.phase_analysis_layer:
+                record["layer"].visible = False
         for time_series_layer in self.phase_capture_time_series_layers:
             time_series_layer.visible = False
         self.viewer.layers.selection.active = self.phase_analysis_layer
         self.viewer.reset_view()
 
     def show_camera_preview(self):
-        if self.phase_analysis_layer is not None:
-            self.phase_analysis_layer.visible = False
+        for record in self.phase_analysis_layer_records:
+            record["layer"].visible = False
         for time_series_layer in self.phase_capture_time_series_layers:
             time_series_layer.visible = False
         self.layer.visible = True
