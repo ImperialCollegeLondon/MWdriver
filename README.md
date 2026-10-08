@@ -59,6 +59,13 @@ Offline analysis needs only NumPy and Matplotlib.
    MWdriver controls appear in a separate, scrollable **MWdriver Controls**
    dock on the right; Napari's layer list remains separate on the left.
 
+   Use **Camera Tools > Start Stream** to allow live preview streaming and
+   **Stop Stream** to disable it. The camera reads and displays live frames only
+   while the **Camera Preview** layer is visible and streaming is allowed.
+   During phase capture and recalibration, preview updates are suspended while
+   the controller collects the six externally triggered frames; recalibration
+   keeps preview streaming disabled between capture sets.
+
 3. Set the camera exposure and ROI, then choose **Start Phase Capture**.
    The controller temporarily uses external triggering, saves six frames under
    `src/captured_frames/phase_capture_*`, and automatically runs the phase checker.
@@ -71,6 +78,11 @@ Offline analysis needs only NumPy and Matplotlib.
    To analyse a particular saved stack, select its layer and choose
    **Camera Tools > Analyze Selected Stack**. **Analyze Latest Capture** remains
    available when you want the most recently saved phase capture instead.
+   Each completed analysis creates a separate results layer. Select an analysis
+   layer to make the review controls refer to that run, then choose among its
+   reconstructed phase and aberration results. The six captured phase images
+   are available in the separate capture-stack layer, not in the analysis review
+   selector.
    Choose the phase-step method in the Camera Status controls. The default
    remains the 90-degree six-frame method; the alternative is the 60-degree
    six-bucket method. Recalibrate separately after switching methods because

@@ -1279,6 +1279,7 @@ class ThorlabsCameraViewer(QObject):
         self.profile_drag_threshold = 40
 
         self.is_streaming = False
+        self.streaming_allowed = True
         self.is_recording = False
         self.recorded_frames = []
 
@@ -1333,7 +1334,7 @@ class ThorlabsCameraViewer(QObject):
 
         self.load_active_trigger_positions_from_json()
 
-        self.start_stream()
+        self.sync_stream_with_active_layer()
         self.start_pico_listener()
 
     def load_active_trigger_positions_from_json(self):
@@ -1473,6 +1474,9 @@ class ThorlabsCameraViewer(QObject):
             colormap="gray",
             contrast_limits=(0, 255)
         )
+        self.layer.events.visible.connect(
+            self.on_camera_preview_visibility_changed
+        )
 
         self.roi_layer = self.viewer.add_shapes(
             name="ROI",
@@ -1564,6 +1568,8 @@ class ThorlabsCameraViewer(QObject):
                 for time_series_layer in self.phase_capture_time_series_layers:
                     time_series_layer.visible = time_series_layer is active_layer
 
+            self.sync_stream_with_active_layer()
+
             if (
                 self.profile_enabled
                 and self.profile_layer is not None
@@ -1591,6 +1597,46 @@ class ThorlabsCameraViewer(QObject):
         ]
         if event.value is self.phase_analysis_layer:
             self.phase_analysis_layer = None
+
+    def sync_stream_with_active_layer(self):
+        preview_streaming = (
+            self.streaming_allowed
+            and self.layer is not None
+            and self.layer.visible
+            and self.current_camera_mode == "live"
+            and not self.phase_capture_active
+            and not self.recalibration_active
+        )
+        capture_reading = (
+            self.phase_capture_active
+            and self.current_camera_mode == "external"
+        )
+        if preview_streaming or capture_reading:
+            self.start_stream()
+        else:
+            self.stop_stream()
+
+    def on_camera_preview_visibility_changed(self, event=None):
+        self.sync_stream_with_active_layer()
+
+    def update_stream_menu_actions(self):
+        if self.start_button is not None:
+            self.start_button.setEnabled(not self.streaming_allowed)
+        if self.stop_button is not None:
+            self.stop_button.setEnabled(self.streaming_allowed)
+
+    def allow_streaming(self):
+        self.streaming_allowed = True
+        self.update_stream_menu_actions()
+        self.sync_stream_with_active_layer()
+
+    def disallow_streaming(self):
+        self.streaming_allowed = False
+        self.is_recording = False
+        if self.record_button is not None:
+            self.record_button.setText("Record")
+        self.update_stream_menu_actions()
+        self.sync_stream_with_active_layer()
 
     def simplify_napari_interface(self):
         """
@@ -2203,11 +2249,11 @@ class ThorlabsCameraViewer(QObject):
         self.camera_menu.addAction(self.analyze_latest_phase_button)
         self.camera_menu.addAction(self.camera_preview_button)
 
-        self.stop_button.setEnabled(False)
+        self.update_stream_menu_actions()
         self.record_button.setEnabled(False)
 
-        self.start_button.triggered.connect(self.start_stream)
-        self.stop_button.triggered.connect(self.stop_stream)
+        self.start_button.triggered.connect(self.allow_streaming)
+        self.stop_button.triggered.connect(self.disallow_streaming)
         self.record_button.triggered.connect(self.toggle_record)
         self.clear_button.triggered.connect(self.clear_frames)
         self.save_button.triggered.connect(self.save_frames)
@@ -3193,6 +3239,21 @@ class ThorlabsCameraViewer(QObject):
         if self.is_streaming:
             return
 
+        preview_streaming = (
+            self.streaming_allowed
+            and self.layer is not None
+            and self.layer.visible
+            and self.current_camera_mode == "live"
+            and not self.phase_capture_active
+            and not self.recalibration_active
+        )
+        capture_reading = (
+            self.phase_capture_active
+            and self.current_camera_mode == "external"
+        )
+        if not preview_streaming and not capture_reading:
+            return
+
         self.is_streaming = True
         self.is_recording = False
 
@@ -3217,9 +3278,8 @@ class ThorlabsCameraViewer(QObject):
 
         self.worker_thread.start()
 
-        self.start_button.setEnabled(False)
-        self.stop_button.setEnabled(True)
-        self.record_button.setEnabled(True)
+        self.update_stream_menu_actions()
+        self.record_button.setEnabled(preview_streaming)
 
         self.record_button.setText("Record")
         self.status_label.setText("Status: Starting...")
@@ -3241,9 +3301,8 @@ class ThorlabsCameraViewer(QObject):
         self.worker = None
         self.worker_thread = None
 
-        self.start_button.setEnabled(True)
-        self.stop_button.setEnabled(False)
         self.record_button.setEnabled(False)
+        self.update_stream_menu_actions()
 
         self.record_button.setText("Record")
         self.status_label.setText("Status: Stopped")
@@ -3428,6 +3487,7 @@ class ThorlabsCameraViewer(QObject):
             return
 
         self.phase_capture_active = True
+        self.sync_stream_with_active_layer()
         self.phase_capture_frames = [None] * PHASE_CAPTURE_COUNT
         self.phase_capture_times = [None] * PHASE_CAPTURE_COUNT
         self.phase_capture_count = 0
@@ -3527,9 +3587,9 @@ class ThorlabsCameraViewer(QObject):
         self.clear_camera_buffer()
 
         try:
-            self.start_stream()
+            self.sync_stream_with_active_layer()
         except Exception as e:
-            print("Restart stream in external trigger mode warning:", e)
+            print("Start capture reader in external trigger mode warning:", e)
 
         self.switching_camera_mode = False
 
@@ -3774,9 +3834,9 @@ class ThorlabsCameraViewer(QObject):
         self.current_camera_mode = "live"
 
         try:
-            self.start_stream()
+            self.sync_stream_with_active_layer()
         except Exception as e:
-            print("Restart stream in live view mode warning:", e)
+            print("Resume permitted live preview warning:", e)
 
         self.switching_camera_mode = False
 
@@ -5204,6 +5264,7 @@ class ThorlabsCameraViewer(QObject):
 
     def abort_recalibration(self, status_text):
         self.recalibration_active = False
+        self.sync_stream_with_active_layer()
         self.recalibration_stage = None
         self.recalibration_coarse_positions_ms = None
         self.recalibration_target_positions_ms = None
@@ -5433,6 +5494,7 @@ class ThorlabsCameraViewer(QObject):
             )
 
         self.recalibration_active = False
+        self.sync_stream_with_active_layer()
         self.recalibration_stage = None
         self.recalibration_current_positions_ms = None
         self.recalibration_target_positions_ms = None
@@ -5483,6 +5545,7 @@ class ThorlabsCameraViewer(QObject):
             return
 
         self.recalibration_active = True
+        self.sync_stream_with_active_layer()
         self.recalibration_stage = "coarse_capture"
         self.recalibration_coarse_positions_ms = coarse_positions
         self.recalibration_target_positions_ms = None
@@ -5504,6 +5567,7 @@ class ThorlabsCameraViewer(QObject):
             self.queue_phase_capture_with_trigger_positions(coarse_positions)
         except Exception as error:
             self.recalibration_active = False
+            self.sync_stream_with_active_layer()
             self.recalibration_stage = None
             self.status_label.setText(
                 f"Status: Recalibration start failed: {error}"
