@@ -113,11 +113,6 @@ print("Phase analysis viewer:", PHASE_ANALYSIS_SCRIPT)
 #   after 6 frames: switch back to internal trigger / live view
 EXTERNAL_TRIGGER_EDGE = "rise"
 
-# For the new 6-interval / first-6-points mode, triggers are close together.
-# Use a shorter exposure only during phase capture, then restore the user exposure
-# when returning to live view.
-PHASE_CAPTURE_EXPOSURE_MS = 10.0
-
 # Recalibration parameters.
 RECALIBRATION_FALLING_EDGE_MS = 650
 RECALIBRATION_TRIGGER_JSON_PATH = os.path.join(
@@ -125,10 +120,9 @@ RECALIBRATION_TRIGGER_JSON_PATH = os.path.join(
     "phase_trigger_positions.json"
 )
 RECALIBRATION_MIN_TRIGGER_SPACING_MS = 6
-# Two triggers this close together can overlap camera exposure/readout
-# (PHASE_CAPTURE_EXPOSURE_MS + TRIGGER_PULSE_MS), causing repeatable dropped
-# frames even on retry with identical positions. Computed positions are
-# actively spread apart to at least this spacing before use.
+# Two triggers this close together can overlap camera exposure/readout,
+# causing repeatable dropped frames even on retry with identical positions.
+# Computed positions are actively spread apart to at least this spacing.
 RECALIBRATION_SAFE_TRIGGER_SPACING_MS = 25
 RECALIBRATION_EDGE_GUARD_MS = 100
 RECALIBRATION_ERROR_TOLERANCE_DEG = 5.0
@@ -207,12 +201,11 @@ class CameraWorker(QObject):
     fps_ready = Signal(float)
     status_ready = Signal(str)
 
-    def __init__(self, cam, display_downsample=1, display_scale_divisor=16, phase_mode_getter=None):
+    def __init__(self, cam, display_downsample=1, phase_mode_getter=None):
         super().__init__()
 
         self.cam = cam
         self.display_downsample = display_downsample
-        self.display_scale_divisor = display_scale_divisor
         self.phase_mode_getter = phase_mode_getter
 
         self.running = False
@@ -333,12 +326,6 @@ class CameraWorker(QObject):
                         ]
                     else:
                         display_frame = raw_frame
-
-                    display_frame = np.clip(
-                        display_frame / self.display_scale_divisor,
-                        0,
-                        255
-                    ).astype(np.uint8)
 
                     display_frame = np.ascontiguousarray(display_frame)
 
@@ -1271,6 +1258,7 @@ class ThorlabsCameraViewer(QObject):
         self.view_phase_analysis_button = None
         self.controls_container = None
         self.controls_resize_filter_widgets = []
+        self.controls_resize_timer = None
 
         # è‡ªå®šä¹‰æ‹–åŠ¨ Intensity Profile Line
         self.profile_dragging = False
@@ -1287,11 +1275,9 @@ class ThorlabsCameraViewer(QObject):
         self.worker_thread = None
 
         self.exposure_s = 0.025
-        self.phase_restore_exposure_s = None
         self.gain_value = 0.0
 
         self.display_downsample = 1
-        self.display_scale_divisor = 16
 
         self.recalibration_active = False
         self.recalibration_stage = None
@@ -1461,7 +1447,7 @@ class ThorlabsCameraViewer(QObject):
         display_height = self.height // self.display_downsample
         display_width = self.width // self.display_downsample
 
-        dummy = np.zeros((display_height, display_width), dtype=np.uint8)
+        dummy = np.zeros((display_height, display_width), dtype=np.uint16)
 
         self.viewer = napari.Viewer()
 
@@ -1472,7 +1458,7 @@ class ThorlabsCameraViewer(QObject):
             dummy,
             name="Camera Preview",
             colormap="gray",
-            contrast_limits=(0, 255)
+            contrast_limits=(0, 1023)
         )
         self.layer.events.visible.connect(
             self.on_camera_preview_visibility_changed
@@ -1931,7 +1917,12 @@ class ThorlabsCameraViewer(QObject):
                 "widgets."
             )
 
-            QTimer.singleShot(100, self.refresh_left_embedded_controls)
+            self.controls_resize_timer = QTimer(self)
+            self.controls_resize_timer.setSingleShot(True)
+            self.controls_resize_timer.timeout.connect(
+                self.refresh_left_embedded_controls
+            )
+            self.controls_resize_timer.start(100)
 
         except Exception as e:
             print("Install controls resize filter warning:", e)
@@ -1944,10 +1935,10 @@ class ThorlabsCameraViewer(QObject):
         try:
             if (
                 obj in self.controls_resize_filter_widgets
-                and event.type() in (QEvent.Resize, QEvent.LayoutRequest)
+                and event.type() == QEvent.Resize
             ):
-                QTimer.singleShot(0, self.refresh_left_embedded_controls)
-                QTimer.singleShot(80, self.refresh_left_embedded_controls)
+                if self.controls_resize_timer is not None:
+                    self.controls_resize_timer.start(80)
 
         except Exception as e:
             print("Controls resize event warning:", e)
@@ -3024,6 +3015,9 @@ class ThorlabsCameraViewer(QObject):
         print("Saved:", roi_mask_path)
 
     def start_intensity_profile(self):
+        if self.viewer.layers.selection.active is not self.layer:
+            self.show_camera_preview()
+
         display_height = self.height // self.display_downsample
         display_width = self.width // self.display_downsample
 
@@ -3261,7 +3255,6 @@ class ThorlabsCameraViewer(QObject):
         self.worker = CameraWorker(
             cam=self.cam,
             display_downsample=self.display_downsample,
-            display_scale_divisor=self.display_scale_divisor,
             phase_mode_getter=lambda: (
                 self.phase_capture_active
                 and self.current_camera_mode == "external"
@@ -3544,20 +3537,10 @@ class ThorlabsCameraViewer(QObject):
             print("stop_acquisition before external trigger warning:", e)
 
         try:
-            # Temporarily shorten exposure for dense phase triggers.
-            # With 6 captures over one selected phase-cycle window, trigger spacing
-            # can be about 48 ms. A 25 ms exposure plus camera readout can miss
-            # triggers, so use a shorter exposure during phase capture only.
-            self.phase_restore_exposure_s = self.exposure_s
-            phase_exposure_s = min(
-                self.exposure_s,
-                PHASE_CAPTURE_EXPOSURE_MS / 1000.0
-            )
-            self.cam.set_exposure(phase_exposure_s)
-            self.exposure_s = phase_exposure_s
+            self.cam.set_exposure(self.exposure_s)
             print(
-                f"Phase capture exposure set to {phase_exposure_s * 1000:.1f} ms "
-                f"(will restore to {self.phase_restore_exposure_s * 1000:.1f} ms)"
+                f"Phase capture exposure kept at the selected setting: "
+                f"{self.exposure_s * 1000:.1f} ms"
             )
         except Exception as e:
             print("Phase exposure setup warning:", e)
@@ -3807,17 +3790,6 @@ class ThorlabsCameraViewer(QObject):
                 self.cam.stop_acquisition()
         except Exception as e:
             print("stop_acquisition before live view warning:", e)
-
-        try:
-            if self.phase_restore_exposure_s is not None:
-                self.cam.set_exposure(self.phase_restore_exposure_s)
-                self.exposure_s = self.phase_restore_exposure_s
-                print(
-                    f"Exposure restored to {self.exposure_s * 1000:.1f} ms for live view"
-                )
-                self.phase_restore_exposure_s = None
-        except Exception as e:
-            print("Restore exposure warning:", e)
 
         try:
             self.cam.set_trigger_mode("int")
@@ -4474,7 +4446,7 @@ class ThorlabsCameraViewer(QObject):
             )
 
     def create_phase_analysis_controls(self, selected_key=None):
-        aberration_label = "Lens aberration (nm OPD)"
+        aberration_label = "Defocus removed (nm OPD)"
         aberration_rms = self.phase_analysis_results.get(
             "wavefront_aberration_rms_nm"
         )
@@ -4483,7 +4455,7 @@ class ThorlabsCameraViewer(QObject):
         )
         if aberration_rms is not None and aberration_pv is not None:
             aberration_label = (
-                f"Lens aberration: RMS {float(aberration_rms):.2f} nm, "
+                f"Defocus removed: RMS {float(aberration_rms):.2f} nm, "
                 f"PV {float(aberration_pv):.2f} nm"
             )
 
@@ -5718,8 +5690,6 @@ class ThorlabsCameraViewer(QObject):
                     count_error_over_5 <= RECALIBRATION_MAX_MID_ERROR_POINTS
                 )
             )
-            
-            verification_passed = True  # For testing, force verification to pass
 
             if verification_passed:
                 previous_pass_candidate = self.recalibration_pending_pass_candidate

@@ -765,15 +765,15 @@ def show_result_viewer():
             "colorbar": "Phase (rad)",
         },
         {
-            "button": "Lens aberration",
+            "button": "Defocus removed",
             "image": wavefront_aberration_nm,
             "title": (
-                "Lens wavefront aberration (piston/tilt/defocus removed)\n"
+                "Defocus-removed wavefront aberration\n"
                 f"RMS = {aberration_rms_nm:.2f} nm, "
                 f"PV = {aberration_pv_nm:.2f} nm"
             ),
             "cmap": "RdBu_r",
-            "colorbar": "Wavefront aberration (nm OPD)",
+            "colorbar": "Defocus-removed OPD (nm)",
         },
         {
             "button": "Residual",
