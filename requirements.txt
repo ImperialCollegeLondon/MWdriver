@@ -2,7 +2,7 @@ numpy
 matplotlib
 imageio
 pyserial
-pylablib
+# Install thorlabs_tsi_sdk separately from the official Thorlabs SDK archive.
 napari
 qtpy
 PySide6

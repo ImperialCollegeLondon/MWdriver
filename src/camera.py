@@ -1,7 +1,6 @@
 import sys
 import time
 import os
-import importlib.abc
 import json
 import queue
 import copy
@@ -32,21 +31,7 @@ import numpy as np
 import serial
 import imageio.v2 as imageio
 
-class _BlockPyQt5Import(importlib.abc.MetaPathFinder):
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname == "PyQt5" or fullname.startswith("PyQt5."):
-            raise ModuleNotFoundError(
-                "PyQt5 is disabled because this application uses PySide6.",
-                name=fullname,
-            )
-
-
-_pyqt5_import_blocker = _BlockPyQt5Import()
-sys.meta_path.insert(0, _pyqt5_import_blocker)
-try:
-    from pylablib.devices import Thorlabs
-finally:
-    sys.meta_path.remove(_pyqt5_import_blocker)
+from thorlabs_native_camera import NativeThorlabsCamera
 
 import napari
 
@@ -1404,18 +1389,7 @@ class ThorlabsCameraViewer(QObject):
 
     def init_camera(self):
         print("Searching for Thorlabs camera...")
-
-        cams = Thorlabs.list_cameras_tlcam()
-        print("Detected cameras:", cams)
-
-        if len(cams) == 0:
-            raise RuntimeError(
-                "No Thorlabs camera detected. "
-                "è¯·æ£€æŸ¥ USB çº¿ã€ThorCam è½¯ä»¶ã€ç›¸æœºé©±åŠ¨ï¼Œä»¥åŠç›¸æœºæ˜¯å¦è¢«å…¶ä»–ç¨‹åºå ç”¨ã€‚"
-            )
-
-        self.cam = Thorlabs.ThorlabsTLCamera(cams[0])
-        self.cam.open()
+        self.cam = NativeThorlabsCamera()
 
         self.cam.set_exposure(self.exposure_s)
 

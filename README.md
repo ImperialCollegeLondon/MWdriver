@@ -10,6 +10,7 @@ the desktop application coordinates acquisition and saves captures for analysis.
 | File | Role |
 | --- | --- |
 | `src/camera.py` | Napari/Qt desktop controller: live view, ROI selection, six-frame capture, trigger recalibration, and analysis launching. |
+| `src/thorlabs_native_camera.py` | Native Thorlabs TSI SDK backend: camera discovery, acquisition, trigger switching, copied frames and timestamps. |
 | `src/phase_capture_timestamps.py` | Timestamp payload and camera frame-timestamp normalization helpers used by the capture controller. |
 | `src/phase_capture_frame_filter.py` | Frame acceptance helper used by the capture controller. |
 | `src/phase_psi.py` | Shared six-frame PSI definitions and 90-degree / 60-degree wrapped-phase estimators. |
@@ -19,19 +20,143 @@ the desktop application coordinates acquisition and saves captures for analysis.
 
 ## Setup
 
-Create and install the desktop environment from the repository root:
+### 1. Install Thorlabs Camera Drivers
+
+Use 64-bit Windows and 64-bit Python for the setup below. Camera acquisition
+uses Thorlabs' official `thorlabs_tsi_sdk` interface. The Windows camera
+drivers, native SDK DLLs, and Python wrapper are separate requirements;
+`pip install -r requirements.txt` does not install the drivers or SDK wrapper.
+
+1. Go to your camera's product page on [Thorlabs](https://www.thorlabs.com/)
+   and open its **Software** tab. Download the ThorCam installer appropriate
+   for your camera model.
+2. Run the installer and install the camera drivers and scientific camera
+   support/SDK components provided for that model. Accept Windows driver
+   installation prompts and restart if the installer requests it.
+3. Connect the camera, open ThorCam, and confirm that it is detected and can
+   display live images. If ThorCam cannot acquire images, resolve the USB or
+   driver issue before continuing with Python.
+4. Close ThorCam before running MWdriver. Only one application should have
+   the camera open at a time.
+
+The native backend has been tested with a CS165MU1 camera. Use the vendor's
+SDK documentation to check support for other camera models.
+
+### 2. Extract the Native SDK and Python Package
+
+With the standard ThorCam installation, the SDK archive is located at:
+
+```text
+C:\Program Files\Thorlabs\Scientific Imaging\Scientific Camera Support\Scientific_Camera_Interfaces.zip
+```
+
+Extract it to a writable directory, for example `C:\ThorlabsSDK`. The archive
+contains a `Scientific Camera Interfaces` folder. The following examples
+assume this extracted layout:
+
+```text
+C:\ThorlabsSDK\Scientific Camera Interfaces\
+    Python_README.txt
+    SDK\
+        Python Toolkit\
+            thorlabs_tsi_camera_python_sdk_package.zip
+        Native Toolkit\
+            dlls\
+                Native_64_lib\
+                    thorlabs_tsi_camera_sdk.dll
+                    ... companion DLLs ...
+```
+
+If your installer uses a different location or layout, follow its
+`Python_README.txt` and adjust the paths below. Keep the Python package ZIP
+intact for installation with pip; do not install an unrelated similarly
+named package from PyPI.
+
+### 3. Install the Python Environment
+
+Run these PowerShell commands from the repository root:
 
 ```powershell
 py -3.14 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python src\camera.py
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install "C:\ThorlabsSDK\Scientific Camera Interfaces\SDK\Python Toolkit\thorlabs_tsi_camera_python_sdk_package.zip"
+.\.venv\Scripts\python.exe -m pip check
 ```
 
-The requirements install NumPy, Matplotlib, ImageIO, pySerial, pylablib,
-Napari, QtPy, and the PySide6 Qt binding. Install the Thorlabs camera
-drivers/SDK required by pylablib's `ThorlabsTLCamera` backend separately.
+The requirements install NumPy, Matplotlib, ImageIO, pySerial, Napari,
+QtPy, and the PySide6 Qt binding. The vendor ZIP installs `thorlabs_tsi_sdk`
+into the same virtual environment. No environment activation is needed for
+these commands, avoiding PowerShell activation-policy issues.
+
+MWdriver no longer needs pylablib, PyQt5, pyqtgraph, pyft232, pyvisa, pyusb,
+rpyc, plumbum, numba, or llvmlite. Installing the current requirements into
+an existing environment does not uninstall old packages. A fresh environment
+is the simplest way to avoid legacy dependencies. When cleaning an existing
+environment, retain any packages needed by other software: NumPy, SciPy,
+pandas and pySerial are still required by the current application stack.
+
+### 4. Configure Native DLLs and Launch
+
+The backend automatically searches these standard installation directories,
+in order, for `thorlabs_tsi_camera_sdk.dll`:
+
+```text
+C:\Program Files\Thorlabs\Scientific Imaging\ThorCam
+C:\Program Files\Thorlabs\ThorImageCAM\Bin
+```
+
+If the native DLLs are available there, launch directly:
+
+```powershell
+.\.venv\Scripts\python.exe src\camera.py
+```
+
+Otherwise, or to select a specific SDK version, set `THORLABS_TSI_DLL_DIR`
+to the extracted native DLL directory before launching:
+
+```powershell
+$env:THORLABS_TSI_DLL_DIR = "C:\ThorlabsSDK\Scientific Camera Interfaces\SDK\Native Toolkit\dlls\Native_64_lib"
+.\.venv\Scripts\python.exe src\camera.py
+```
+
+This variable overrides automatic discovery and applies to the current
+PowerShell session. Point it at the directory containing the DLLs, not the
+SDK root or the DLL file itself. Keep all companion DLLs together; copying
+only `thorlabs_tsi_camera_sdk.dll` is not sufficient. DLL architecture must
+match Python: `Native_64_lib` for 64-bit Python, `Native_32_lib` for 32-bit
+Python. Do not mix DLLs from different SDK releases or copy them into Windows
+system directories.
+
+### Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| `No module named 'thorlabs_tsi_sdk'` or a request to install the official SDK | Install the vendor Python package ZIP using `.venv\Scripts\python.exe -m pip`, not a different Python interpreter. |
+| `Thorlabs native camera DLLs were not found` | Install ThorCam or set `THORLABS_TSI_DLL_DIR` to the native DLL directory. An incorrect override prevents automatic discovery. |
+| DLL load failure, `WinError 126`, or `WinError 193` | Check that all companion DLLs are present and that SDK DLL architecture matches Python. Follow the vendor installer instructions for any required runtime components. |
+| No camera detected or camera cannot be opened | Close ThorCam and other camera applications, check USB and power, and confirm acquisition works in ThorCam first. |
+
+Check the software environment without starting camera acquisition:
+
+```powershell
+.\.venv\Scripts\python.exe -c "from thorlabs_tsi_sdk.tl_camera import TLCameraSDK; print('Thorlabs Python wrapper import OK')"
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+The import check confirms the Python wrapper is installed; it does not prove
+that native DLLs load or that a camera is connected. Backend tests use a
+simulated camera. Live view and live/external/live switching have also been
+checked on the CS165MU1; a full six-pulse capture must be verified with your
+Pico and trigger wiring.
+
+### Acquisition and Hardware Notes
+
+Live view uses unlimited software-triggered acquisition; phase capture uses
+one frame per hardware trigger. Native frame buffers are copied before the
+next poll. Saved camera timestamps are SDK-relative nanoseconds, with
+`timestamp_clock_frequency_hz` set to 1,000,000,000 to match those units;
+they are not host wall-clock timestamps.
 Offline analysis needs only NumPy and Matplotlib.
 - The timestamp and frame-filter helper modules are included in `src/`.
    The optional notebook template `src/phase_shifts.ipynb` is not included.
@@ -40,7 +165,7 @@ Offline analysis needs only NumPy and Matplotlib.
   Firmware pins are GP15 (PWM waveform), GP12 (camera trigger), and GP27 (buzzer).
   Use appropriate signal conditioning and compatible voltage levels; GP15 is
   PWM, not a direct analog output.
-- Set `PICO_PORT` in `camera.py` to the Pico's serial port (default `COM3`);
+- Set `PICO_PORT` in `camera.py` to the Pico's serial port (default `COM4`);
   `PICO_BAUDRATE` defaults to 115200.
 
 ## Workflow
