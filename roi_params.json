@@ -1,0 +1,27 @@
+{
+    "roi_type": "circle_or_ellipse",
+    "display_coordinates": {
+        "x_min": 293.1841735839844,
+        "x_max": 1025.50634765625,
+        "y_min": 163.749267578125,
+        "y_max": 896.9428100585938
+    },
+    "raw_coordinates": {
+        "center_x": 659.5,
+        "center_y": 530.5,
+        "radius_x": 366.5,
+        "radius_y": 366.5,
+        "average_radius": 366.5,
+        "x_min": 293,
+        "x_max": 1026,
+        "y_min": 164,
+        "y_max": 897
+    },
+    "image_size": {
+        "width": 1440,
+        "height": 1080
+    },
+    "display_downsample": 1,
+    "mask_mode": "mask_outside_area",
+    "mask_meaning": "roi_mask.npy: True means retained valid area; False means masked/rejected area"
+}
