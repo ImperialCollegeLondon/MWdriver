@@ -328,6 +328,14 @@ save_intermediate_png(
     "N-bucket phase denominator",
     "RdBu_r",
 )
+
+save_intermediate_png(
+    session_dir / "phase_intermediate_total.png",
+    np.ma.masked_array(np.sqrt(phase_denominator ** 2 + phase_numerator ** 2), mask=mask),
+    "phase magnitude",
+    "grey",
+)
+
 save_intermediate_png(
     session_dir / "phase_intermediate_04_wrapped.png",
     phase,

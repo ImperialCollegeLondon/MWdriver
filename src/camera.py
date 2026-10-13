@@ -97,6 +97,7 @@ print("Phase analysis viewer:", PHASE_ANALYSIS_SCRIPT)
 #   phase capture: temporarily switch to external trigger
 #   after 6 frames: switch back to internal trigger / live view
 EXTERNAL_TRIGGER_EDGE = "rise"
+STANDARD_PHASE_EXPOSURE_MS = {60.0: 20.0, 90.0: 30.0}
 
 # Recalibration parameters.
 RECALIBRATION_FALLING_EDGE_MS = 650
@@ -1259,7 +1260,9 @@ class ThorlabsCameraViewer(QObject):
         self.worker = None
         self.worker_thread = None
 
-        self.exposure_s = 0.025
+        self.exposure_s = STANDARD_PHASE_EXPOSURE_MS[
+            get_psi_algorithm(DEFAULT_PSI_ALGORITHM)["phase_step_deg"]
+        ] / 1000.0
         self.gain_value = 0.0
 
         self.display_downsample = 1
@@ -1374,6 +1377,16 @@ class ThorlabsCameraViewer(QObject):
 
         self.selected_psi_algorithm_id = algorithm_id
         self.last_selected_psi_algorithm_id = algorithm_id
+        exposure_ms = STANDARD_PHASE_EXPOSURE_MS[
+            get_psi_algorithm(algorithm_id)["phase_step_deg"]
+        ]
+        self.exposure_slider.blockSignals(True)
+        self.exposure_slider.setValue(int(exposure_ms * 10))
+        self.exposure_slider.blockSignals(False)
+        self.exposure_spinbox.blockSignals(True)
+        self.exposure_spinbox.setValue(exposure_ms)
+        self.exposure_spinbox.blockSignals(False)
+        self.set_camera_exposure(exposure_ms)
         self.active_trigger_positions_ms = None
         positions = self.load_active_trigger_positions_from_json()
         if positions is None:
@@ -3540,9 +3553,6 @@ class ThorlabsCameraViewer(QObject):
 
         self.current_camera_mode = "external"
 
-        # Clear any old frames that may remain in the buffer.
-        self.clear_camera_buffer()
-
         try:
             self.sync_stream_with_active_layer()
         except Exception as e:
@@ -3657,6 +3667,28 @@ class ThorlabsCameraViewer(QObject):
 
         if self.phase_capture_count >= PHASE_CAPTURE_COUNT:
             print("Extra external-trigger frame received after 6/6; ignoring.")
+            return
+
+        acquisition_index = (
+            frame_meta.get("acquisition_index")
+            if isinstance(frame_meta, dict) else None
+        )
+        if acquisition_index is not None:
+            if frame_meta.get("trigger_mode") != "ext":
+                print("Ignoring queued live-view frame during phase capture.")
+                return
+            if frame_meta.get("acquisition_id") != self.cam.acquisition_id:
+                print("Ignoring frame from an earlier camera acquisition.")
+                return
+            if not 0 <= acquisition_index < PHASE_CAPTURE_COUNT:
+                print(f"Unexpected native acquisition index {acquisition_index}; ignoring.")
+                return
+            self.assign_phase_frame(
+                phase_index=acquisition_index,
+                raw_frame=raw_frame,
+                source_text="native external frame",
+                frame_meta=frame_meta,
+            )
             return
 
         now_s = time.monotonic()
@@ -4682,10 +4714,10 @@ class ThorlabsCameraViewer(QObject):
                 return
             except Exception as error:
                 self.status_label.setText(
-                    "Status: Failed to apply active trigger positions; "
-                    "falling back to Pico current positions"
+                    f"Status: Phase capture not started: {error}"
                 )
                 print("Start Phase Capture trigger-update warning:", error)
+                return
 
         if self.selected_psi_algorithm_id != LEGACY_90_DEG:
             self.status_label.setText(
@@ -4786,6 +4818,11 @@ class ThorlabsCameraViewer(QObject):
         if min_spacing_ms is None:
             min_spacing_ms = RECALIBRATION_SAFE_TRIGGER_SPACING_MS
 
+        min_spacing_ms = max(
+            min_spacing_ms,
+            self.cam.get_recommended_trigger_spacing_ms(exposure_s=self.exposure_s),
+        )
+
         lower_bound = float(RECALIBRATION_EDGE_GUARD_MS)
         upper_bound = float(
             RECALIBRATION_FALLING_EDGE_MS - 1 - RECALIBRATION_EDGE_GUARD_MS
@@ -4794,16 +4831,11 @@ class ThorlabsCameraViewer(QObject):
         required_span = min_spacing_ms * (PHASE_CAPTURE_COUNT - 1)
 
         if required_span > (upper_bound - lower_bound):
-            # The requested spacing cannot fit at all; fall back to an even
-            # spread across the full usable window.
-            return [
-                int(round(value))
-                for value in np.linspace(
-                    lower_bound,
-                    upper_bound,
-                    PHASE_CAPTURE_COUNT,
-                )
-            ]
+            raise ValueError(
+                f"Six camera-safe triggers need {required_span:g} ms, "
+                f"but the calibration window is only {upper_bound - lower_bound:g} ms. "
+                "Reduce exposure or use a longer waveform."
+            )
 
         adjusted = [float(value) for value in trigger_positions_ms]
 
@@ -5012,6 +5044,21 @@ class ThorlabsCameraViewer(QObject):
 
         positions = self.validate_trigger_positions_ms(trigger_positions_ms)
         self.last_capture_algorithm_id = self.selected_psi_algorithm_id
+
+        required_spacing_ms = self.cam.get_recommended_trigger_spacing_ms(
+            exposure_s=self.exposure_s,
+        )
+        actual_spacing_ms = min(np.diff(positions))
+        print(
+            f"Camera trigger spacing: minimum {actual_spacing_ms:g} ms; "
+            f"recommended {required_spacing_ms} ms at "
+            f"{self.exposure_s * 1000:g} ms exposure"
+        )
+        if actual_spacing_ms < required_spacing_ms:
+            raise ValueError(
+                f"Trigger gap {actual_spacing_ms:g} ms is below the camera-safe "
+                f"{required_spacing_ms} ms spacing. Recalibrate or reduce exposure."
+            )
 
         self.last_trigger_update_ack_positions_ms = None
         self.last_trigger_update_error_text = None
