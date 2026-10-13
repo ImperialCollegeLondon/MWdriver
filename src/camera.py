@@ -1254,8 +1254,6 @@ class ThorlabsCameraViewer(QObject):
 
         self.is_streaming = False
         self.streaming_allowed = True
-        self.is_recording = False
-        self.recorded_frames = []
 
         self.worker = None
         self.worker_thread = None
@@ -1605,9 +1603,6 @@ class ThorlabsCameraViewer(QObject):
 
     def disallow_streaming(self):
         self.streaming_allowed = False
-        self.is_recording = False
-        if self.record_button is not None:
-            self.record_button.setText("Record")
         self.update_stream_menu_actions()
         self.sync_stream_with_active_layer()
 
@@ -2181,9 +2176,6 @@ class ThorlabsCameraViewer(QObject):
 
         self.start_button = QAction("Start Stream", qt_window)
         self.stop_button = QAction("Stop Stream", qt_window)
-        self.record_button = QAction("Record", qt_window)
-        self.clear_button = QAction("Clear", qt_window)
-        self.save_button = QAction("Save", qt_window)
         self.start_phase_capture_button = QAction("Start Phase Capture", qt_window)
         self.recalibrate_button = QAction("Recalibrate", qt_window)
         self.analyze_latest_phase_button = QAction(
@@ -2198,9 +2190,6 @@ class ThorlabsCameraViewer(QObject):
 
         self.start_button.setStatusTip("Start live camera stream")
         self.stop_button.setStatusTip("Stop live camera stream")
-        self.record_button.setStatusTip("Start / stop continuous recording")
-        self.clear_button.setStatusTip("Clear recorded frames")
-        self.save_button.setStatusTip("Save recorded frames")
         self.start_phase_capture_button.setStatusTip(
             "Start one Pico triangle cycle and hardware-trigger 6 phase images"
         )
@@ -2217,10 +2206,6 @@ class ThorlabsCameraViewer(QObject):
         self.camera_menu.addAction(self.start_button)
         self.camera_menu.addAction(self.stop_button)
         self.camera_menu.addSeparator()
-        self.camera_menu.addAction(self.record_button)
-        self.camera_menu.addAction(self.clear_button)
-        self.camera_menu.addAction(self.save_button)
-        self.camera_menu.addSeparator()
         self.camera_menu.addAction(self.start_phase_capture_button)
         self.camera_menu.addAction(self.recalibrate_button)
         self.camera_menu.addAction(self.analyze_selected_phase_button)
@@ -2228,13 +2213,9 @@ class ThorlabsCameraViewer(QObject):
         self.camera_menu.addAction(self.camera_preview_button)
 
         self.update_stream_menu_actions()
-        self.record_button.setEnabled(False)
 
         self.start_button.triggered.connect(self.allow_streaming)
         self.stop_button.triggered.connect(self.disallow_streaming)
-        self.record_button.triggered.connect(self.toggle_record)
-        self.clear_button.triggered.connect(self.clear_frames)
-        self.save_button.triggered.connect(self.save_frames)
         self.start_phase_capture_button.triggered.connect(
             self.request_pico_phase_capture_from_button
         )
@@ -2280,7 +2261,6 @@ class ThorlabsCameraViewer(QObject):
 
         self.status_label = QLabel("Status: Stopped")
         self.fps_label = QLabel("FPS: --")
-        self.record_label = QLabel("Recorded: 0")
         self.roi_label = QLabel("ROI: Not selected")
         self.profile_label = QLabel("Profile: Off")
         self.pico_label = QLabel("Pico: Not connected")
@@ -2288,7 +2268,6 @@ class ThorlabsCameraViewer(QObject):
 
         self.status_label.setWordWrap(True)
         self.fps_label.setWordWrap(True)
-        self.record_label.setWordWrap(True)
         self.roi_label.setWordWrap(True)
         self.profile_label.setWordWrap(True)
         self.pico_label.setWordWrap(True)
@@ -2297,7 +2276,6 @@ class ThorlabsCameraViewer(QObject):
         status_layout.addWidget(status_title_label)
         status_layout.addWidget(self.status_label)
         status_layout.addWidget(self.fps_label)
-        status_layout.addWidget(self.record_label)
         status_layout.addWidget(self.roi_label)
         status_layout.addWidget(self.profile_label)
         status_layout.addWidget(self.pico_label)
@@ -3236,7 +3214,6 @@ class ThorlabsCameraViewer(QObject):
             return
 
         self.is_streaming = True
-        self.is_recording = False
 
         self.worker_thread = QThread()
         self.worker = CameraWorker(
@@ -3259,9 +3236,7 @@ class ThorlabsCameraViewer(QObject):
         self.worker_thread.start()
 
         self.update_stream_menu_actions()
-        self.record_button.setEnabled(preview_streaming)
 
-        self.record_button.setText("Record")
         self.status_label.setText("Status: Starting...")
 
     def stop_stream(self):
@@ -3269,7 +3244,6 @@ class ThorlabsCameraViewer(QObject):
             return
 
         self.is_streaming = False
-        self.is_recording = False
 
         if self.worker is not None:
             self.worker.stop()
@@ -3281,13 +3255,10 @@ class ThorlabsCameraViewer(QObject):
         self.worker = None
         self.worker_thread = None
 
-        self.record_button.setEnabled(False)
         self.update_stream_menu_actions()
 
-        self.record_button.setText("Record")
         self.status_label.setText("Status: Stopped")
         self.fps_label.setText("FPS: --")
-        self.record_label.setText(f"Recorded: {len(self.recorded_frames)}")
 
     def update_frame(self, raw_frame, display_frame, frame_meta=None):
         self.latest_raw_frame = raw_frame
@@ -3308,14 +3279,6 @@ class ThorlabsCameraViewer(QObject):
             # The raw frame has already been assigned above, so return immediately.
             return
 
-        if self.is_recording:
-            self.recorded_frames.append(raw_frame.copy())
-
-            if len(self.recorded_frames) % 5 == 0:
-                self.record_label.setText(
-                    f"Recorded: {len(self.recorded_frames)}"
-                )
-
         display_frame = self.apply_display_mask(display_frame)
 
         self.layer.data = display_frame
@@ -3327,45 +3290,6 @@ class ThorlabsCameraViewer(QObject):
 
     def update_status(self, text):
         self.status_label.setText(text)
-
-    def toggle_record(self):
-        self.is_recording = not self.is_recording
-
-        if self.is_recording:
-            self.record_button.setText("Stop Rec")
-            self.status_label.setText("Status: Recording")
-        else:
-            self.record_button.setText("Record")
-            self.status_label.setText("Status: Running...")
-            self.record_label.setText(f"Recorded: {len(self.recorded_frames)}")
-
-    def clear_frames(self):
-        self.recorded_frames = []
-        self.record_label.setText("Recorded: 0")
-
-        if self.is_recording:
-            self.is_recording = False
-            self.record_button.setText("Record")
-            self.status_label.setText("Status: Running...")
-
-    def save_frames(self):
-        if len(self.recorded_frames) == 0:
-            self.status_label.setText("Status: No frames to save")
-            return
-
-        self.status_label.setText("Status: Saving...")
-        print("Saving frames...")
-
-        stack = np.array(self.recorded_frames)
-        np.save("recorded_frames.npy", stack)
-
-        self.status_label.setText(
-            f"Status: Saved {len(self.recorded_frames)} frames"
-        )
-
-        print("Saved recorded_frames.npy")
-        print(f"Shape: {stack.shape}")
-        print(f"Dtype: {stack.dtype}")
 
     def start_pico_listener(self):
         if self.pico_thread is not None:

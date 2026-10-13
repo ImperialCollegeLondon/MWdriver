@@ -1,6 +1,7 @@
 """Native Thorlabs TSI backend for the desktop capture controller."""
 
 import os
+import math
 from pathlib import Path
 from threading import RLock
 
@@ -55,6 +56,7 @@ class NativeThorlabsCamera:
         self._lock = RLock()
         self._pending = []
         self._next_index = 0
+        self._acquisition_id = 0
         self._armed = False
         self._mode = "int"
         self._camera = None
@@ -120,6 +122,7 @@ class NativeThorlabsCamera:
             )
             self._camera.arm(64)
             self._armed = True
+            self._acquisition_id += 1
             self._pending.clear()
             self._next_index = 0
             try:
@@ -145,6 +148,9 @@ class NativeThorlabsCamera:
                 break
             image = np.array(frame.image_buffer, copy=True)
             metadata = {
+                "acquisition_id": self._acquisition_id,
+                "trigger_mode": self._mode,
+                "acquisition_index": self._next_index,
                 "framestamp": frame.frame_count,
                 "camera_timestamp": frame.time_stamp_relative_ns_or_null,
             }
@@ -181,6 +187,20 @@ class NativeThorlabsCamera:
 
     def get_timestamp_clock_frequency(self):
         return 1_000_000_000
+
+    def get_recommended_trigger_spacing_ms(self, exposure_s=None):
+        with self._lock:
+            exposure_ms = (
+                self._camera.exposure_time_us / 1000.0
+                if exposure_s is None else exposure_s * 1000.0
+            )
+            readout_ms = self._camera.sensor_readout_time_ns / 1_000_000.0
+            return math.ceil(exposure_ms + readout_ms + 5.0)
+
+    @property
+    def acquisition_id(self):
+        with self._lock:
+            return self._acquisition_id
 
     def close(self):
         with self._lock:
