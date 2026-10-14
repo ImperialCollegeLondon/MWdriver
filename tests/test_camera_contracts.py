@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import camera
 import phase_capture_worker
+from phase_capture_controller import PhaseCaptureController
 from application_bootstrap import run_application
 import check_measured_vs_expected_phase as phase_check
 import phase_analysis_new
@@ -654,31 +655,7 @@ class CameraContractTests(unittest.TestCase):
 
     @staticmethod
     def load_save_result_handler():
-        camera_path = ROOT / "src" / "camera.py"
-        camera_tree = ast.parse(camera_path.read_text(encoding="utf-8"))
-        viewer_class = next(
-            node for node in camera_tree.body
-            if isinstance(node, ast.ClassDef)
-            and node.name == "ThorlabsCameraViewer"
-        )
-        handler_node = next(
-            node for node in viewer_class.body
-            if isinstance(node, ast.FunctionDef)
-            and node.name == "on_phase_save_result"
-        )
-        handler_module = ast.Module(body=[handler_node], type_ignores=[])
-        handler_namespace = {
-            "np": np,
-            "os": __import__("os"),
-            "json": json,
-            "PhaseSaveResult": PhaseSaveResult,
-            "RECALIBRATION_CONFIG": camera.RECALIBRATION_CONFIG,
-            "is_strict_recalibration_pass": camera.is_strict_recalibration_pass,
-            "decide_verification_capture_action": decide_verification_capture_action,
-            "select_best_recalibration_candidate": select_best_recalibration_candidate,
-        }
-        exec(compile(handler_module, str(camera_path), "exec"), handler_namespace)
-        return handler_namespace["on_phase_save_result"]
+        return PhaseCaptureController.on_phase_save_result
 
     def test_phase_frames_are_assigned_to_requested_slots_and_copied(self):
         viewer = SimpleNamespace(
