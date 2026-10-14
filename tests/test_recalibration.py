@@ -13,6 +13,7 @@ from recalibration import (
     build_even_trigger_positions_ms,
     compute_coarse_refined_positions_ms,
     enforce_minimum_trigger_spacing_ms,
+    decide_incomplete_capture_action,
     is_strict_recalibration_pass,
     score_recalibration_candidate,
     should_auto_restart_recalibration,
@@ -22,6 +23,33 @@ from recalibration import (
 
 
 class RecalibrationValidationTests(unittest.TestCase):
+    def test_incomplete_capture_decision_outcomes(self):
+        config = RecalibrationConfig(max_incomplete_verification_retries=2)
+        cases = [
+            (False, "verification_capture", 0, True, "none"),
+            (True, "verification_capture", 0, False, "retry"),
+            (True, "verification_capture", 1, True, "retry"),
+            (True, "verification_capture", 2, True, "keep_best"),
+            (True, "verification_capture", 2, False, "abort"),
+            (True, "coarse_capture", 0, True, "abort"),
+        ]
+
+        for active, stage, retry_count, has_candidate, expected in cases:
+            with self.subTest(
+                active=active,
+                stage=stage,
+                retry_count=retry_count,
+                has_candidate=has_candidate,
+            ):
+                decision = decide_incomplete_capture_action(
+                    recalibration_active=active,
+                    recalibration_stage=stage,
+                    incomplete_retry_count=retry_count,
+                    has_previous_candidate=has_candidate,
+                    config=config,
+                )
+                self.assertEqual(decision.action, expected)
+
     def test_config_derives_verification_limit_from_refinement_rounds(self):
         config = RecalibrationConfig(max_refinement_rounds=5)
         self.assertEqual(config.max_verification_captures, 6)

@@ -37,6 +37,28 @@ class RecalibrationConfig:
 DEFAULT_RECALIBRATION_CONFIG = RecalibrationConfig()
 
 
+@dataclass(frozen=True)
+class IncompleteCaptureDecision:
+    action: str
+
+
+def decide_incomplete_capture_action(
+    recalibration_active,
+    recalibration_stage,
+    incomplete_retry_count,
+    has_previous_candidate,
+    config,
+):
+    if not recalibration_active:
+        return IncompleteCaptureDecision("none")
+    if recalibration_stage == "verification_capture":
+        if incomplete_retry_count < config.max_incomplete_verification_retries:
+            return IncompleteCaptureDecision("retry")
+        if has_previous_candidate:
+            return IncompleteCaptureDecision("keep_best")
+    return IncompleteCaptureDecision("abort")
+
+
 def _minimum_spacing(config, camera_required_spacing_ms, requested_spacing_ms=None):
     return max(
         config.safe_trigger_spacing_ms,

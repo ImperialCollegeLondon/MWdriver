@@ -91,6 +91,7 @@ from recalibration import (
     build_even_trigger_positions_ms,
     compute_coarse_refined_positions_ms,
     compute_iterative_refined_positions_ms as compute_iterative_refined_positions,
+    decide_incomplete_capture_action,
     enforce_minimum_trigger_spacing_ms,
     is_strict_recalibration_pass,
     score_recalibration_candidate,
@@ -2881,38 +2882,39 @@ class ThorlabsCameraViewer(QObject):
         )
 
         retry_verification_capture = False
-        if self.recalibration_active:
-            if (
-                self.recalibration_stage == "verification_capture"
-                and self.recalibration_incomplete_verification_retries
-                < RECALIBRATION_CONFIG.max_incomplete_verification_retries
-            ):
-                self.recalibration_incomplete_verification_retries += 1
-                retry_verification_capture = True
-            elif (
-                self.recalibration_stage == "verification_capture"
-                and self.recalibration_candidates
-            ):
-                best_candidate = min(
-                    self.recalibration_candidates,
-                    key=lambda candidate_item: candidate_item["score"],
-                )
-                self.finalize_recalibration_candidate(
-                    selected_candidate=best_candidate,
-                    fallback_used=True,
-                )
-                self.status_label.setText(
-                    "Status: Verification capture failed; kept the best "
-                    "previously measured session"
-                )
-                self.phase_label.setText(
-                    "Phase Capture: Kept best previous verification session"
-                )
-            else:
-                self.abort_recalibration(
-                    "Status: Recalibration aborted - verification capture "
-                    "incomplete after retries"
-                )
+        incomplete_capture_decision = decide_incomplete_capture_action(
+            recalibration_active=self.recalibration_active,
+            recalibration_stage=self.recalibration_stage,
+            incomplete_retry_count=(
+                self.recalibration_incomplete_verification_retries
+            ),
+            has_previous_candidate=bool(self.recalibration_candidates),
+            config=RECALIBRATION_CONFIG,
+        )
+        if incomplete_capture_decision.action == "retry":
+            self.recalibration_incomplete_verification_retries += 1
+            retry_verification_capture = True
+        elif incomplete_capture_decision.action == "keep_best":
+            best_candidate = min(
+                self.recalibration_candidates,
+                key=lambda candidate_item: candidate_item["score"],
+            )
+            self.finalize_recalibration_candidate(
+                selected_candidate=best_candidate,
+                fallback_used=True,
+            )
+            self.status_label.setText(
+                "Status: Verification capture failed; kept the best "
+                "previously measured session"
+            )
+            self.phase_label.setText(
+                "Phase Capture: Kept best previous verification session"
+            )
+        elif incomplete_capture_decision.action == "abort":
+            self.abort_recalibration(
+                "Status: Recalibration aborted - verification capture "
+                "incomplete after retries"
+            )
 
         # Do not stay locked in external trigger mode forever.
         # Return to live view so the system can be tested again.
