@@ -118,11 +118,6 @@ class CameraViewController:
     def on_camera_preview_visibility_changed(self, event=None):
         self.sync_stream_with_active_layer()
 
-    def update_stream_menu_actions(self):
-        if self.start_button is not None:
-            self.start_button.setEnabled(not self.streaming_allowed)
-        if self.stop_button is not None:
-            self.stop_button.setEnabled(self.streaming_allowed)
 
     def allow_streaming(self):
         self.streaming_allowed = True
