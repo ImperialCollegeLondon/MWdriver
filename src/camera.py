@@ -44,6 +44,7 @@ from phase_capture_timestamps import (
 from phase_capture_frame_filter import should_accept_phase_frame
 from phase_capture_storage import (
     allocate_capture_session_dir,
+    generate_phase_analysis_notebook,
     raw_to_viewable_uint8,
     save_phase_capture_metadata,
     save_phase_pngs,
@@ -566,90 +567,15 @@ class PhaseSaveWorker(QObject):
         self.session_prefix = str(session_prefix)
 
     def create_phase_analysis_notebook(self, session_dir, npy_path, timestamp):
-        """
-        Create a new phase analysis notebook inside the current capture folder.
-
-        This version copies PHASE_NOTEBOOK_TEMPLATE almost unchanged.
-        It only replaces the .npy loading cell so that the generated notebook
-        loads the current capture session's raw_stack.npy file.
-
-        All other code cells are kept exactly the same as the template notebook.
-        """
-        try:
-            template_path = PHASE_NOTEBOOK_TEMPLATE
-
-            if not os.path.exists(template_path):
-                warning = f"Phase notebook template not found: {template_path}"
-                print(warning)
-                self.status_ready.emit(warning)
-                return None
-
-            with open(template_path, "r", encoding="utf-8") as f:
-                notebook = json.load(f)
-
-            npy_filename = os.path.basename(npy_path)
-
-            new_load_cell_source = [
-                f'with open("{npy_filename}", "rb") as f:\n',
-                "    data = np.load(f)\n"
-            ]
-
-            found_load_cell = False
-
-            for cell in notebook.get("cells", []):
-                if cell.get("cell_type") != "code":
-                    continue
-
-                source = cell.get("source", "")
-
-                if isinstance(source, list):
-                    source_text = "".join(source)
-                else:
-                    source_text = str(source)
-
-                # Only replace the cell that loads a raw_stack .npy file.
-                # Other analysis code is kept exactly the same as the template.
-                if "np.load" in source_text and "_raw_stack.npy" in source_text:
-                    cell["source"] = new_load_cell_source
-                    found_load_cell = True
-
-                # Clear previous outputs so the generated notebook is clean.
-                cell["execution_count"] = None
-                cell["outputs"] = []
-
-            if not found_load_cell:
-                # If no old loading cell is found, insert a new loading cell
-                # near the beginning of the notebook.
-                load_cell = {
-                    "cell_type": "code",
-                    "execution_count": None,
-                    "metadata": {},
-                    "outputs": [],
-                    "source": new_load_cell_source
-                }
-
-                notebook.setdefault("cells", []).insert(1, load_cell)
-
-            output_notebook_path = os.path.join(
-                session_dir,
-                f"phase_shifts_{timestamp}.ipynb"
-            )
-
-            with open(output_notebook_path, "w", encoding="utf-8") as f:
-                json.dump(notebook, f, indent=1, ensure_ascii=False)
-
-            print("Generated phase analysis notebook:", output_notebook_path)
-            self.status_ready.emit(
-                f"Generated phase analysis notebook: {output_notebook_path}"
-            )
-
-            return output_notebook_path
-
-        except Exception as e:
-            error_text = f"Create phase analysis notebook error: {e}"
-            print(error_text)
-            self.status_ready.emit(error_text)
-            return None
+        result = generate_phase_analysis_notebook(
+            PHASE_NOTEBOOK_TEMPLATE,
+            session_dir,
+            npy_path,
+            timestamp,
+        )
+        print(result.message)
+        self.status_ready.emit(result.message)
+        return result.path
 
     def run_automatic_phase_check(self, session_dir):
         """

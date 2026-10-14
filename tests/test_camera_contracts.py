@@ -18,7 +18,10 @@ sys.path.insert(0, str(ROOT / "src"))
 import camera
 import check_measured_vs_expected_phase as phase_check
 from phase_capture_process import PhaseCheckResult, run_phase_check
-from phase_capture_storage import allocate_capture_session_dir
+from phase_capture_storage import (
+    allocate_capture_session_dir,
+    generate_phase_analysis_notebook,
+)
 from phase_psi import SIX_BUCKET_60_DEG
 from recalibration import (
     DEFAULT_RECALIBRATION_CONFIG,
@@ -65,6 +68,61 @@ class CameraContractTests(unittest.TestCase):
             self.assertEqual(Path(first).name, "phase_capture_20261014_120300")
             self.assertEqual(Path(next_path).name, "phase_capture_20261014_120300_03")
             self.assertTrue(Path(next_path).is_dir())
+
+    def test_notebook_writer_retargets_stack_and_clears_code_outputs(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            template_path = Path(temporary_directory, "template.ipynb")
+            template_path.write_text(
+                json.dumps({
+                    "cells": [
+                        {"cell_type": "markdown", "source": ["# Template"]},
+                        {
+                            "cell_type": "code",
+                            "source": ["data = np.load('old_raw_stack.npy')"],
+                            "execution_count": 3,
+                            "outputs": [{"output_type": "stream", "text": ["old"]}],
+                        },
+                        {
+                            "cell_type": "code",
+                            "source": ["print('keep this code')"],
+                            "execution_count": 4,
+                            "outputs": [{"output_type": "stream", "text": ["old"]}],
+                        },
+                    ]
+                }),
+                encoding="utf-8",
+            )
+
+            result = generate_phase_analysis_notebook(
+                str(template_path),
+                temporary_directory,
+                str(Path(temporary_directory, "capture_raw_stack.npy")),
+                "20261014_120400",
+            )
+
+            self.assertTrue(result.generated)
+            self.assertEqual(Path(result.path).name, "phase_shifts_20261014_120400.ipynb")
+            generated = json.loads(Path(result.path).read_text(encoding="utf-8"))
+
+        load_cell = generated["cells"][1]
+        self.assertIn("capture_raw_stack.npy", "".join(load_cell["source"]))
+        self.assertIsNone(load_cell["execution_count"])
+        self.assertEqual(load_cell["outputs"], [])
+        self.assertEqual(generated["cells"][2]["source"], ["print('keep this code')"])
+        self.assertEqual(generated["cells"][2]["outputs"], [])
+
+    def test_notebook_writer_reports_missing_template(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            result = generate_phase_analysis_notebook(
+                str(Path(temporary_directory, "missing.ipynb")),
+                temporary_directory,
+                "capture_raw_stack.npy",
+                "20261014_120401",
+            )
+
+        self.assertFalse(result.generated)
+        self.assertIsNone(result.path)
+        self.assertIn("template not found", result.message)
 
     @staticmethod
     def load_controller_method(method_name, namespace):
