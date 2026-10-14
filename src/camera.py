@@ -42,7 +42,14 @@ from phase_capture_timestamps import (
     normalize_frame_framestamp,
 )
 from phase_capture_frame_filter import should_accept_phase_frame
-from phase_capture_storage import allocate_capture_session_dir
+from phase_capture_storage import (
+    allocate_capture_session_dir,
+    raw_to_viewable_uint8,
+    save_phase_capture_metadata,
+    save_phase_pngs,
+    save_raw_phase_stack,
+    save_roi_snapshots,
+)
 from recalibration import (
     DEFAULT_RECALIBRATION_CONFIG,
     build_even_trigger_positions_ms,
@@ -141,26 +148,6 @@ def triangle_wave_falling_edge_voltage(trigger_position_ms):
     fraction = max(0.0, min(1.0, fraction))
     return TRIANGLE_WAVE_SUPPLY_VOLTAGE * fraction
 
-
-
-def raw_to_viewable_uint8(frame):
-    frame = np.asarray(frame)
-    frame_float = frame.astype(np.float32)
-
-    low = np.percentile(frame_float, 1)
-    high = np.percentile(frame_float, 99.5)
-
-    if high <= low:
-        low = float(np.min(frame_float))
-        high = float(np.max(frame_float))
-
-    if high <= low:
-        return np.zeros(frame.shape, dtype=np.uint8)
-
-    frame_uint8 = (frame_float - low) / (high - low) * 255.0
-    frame_uint8 = np.clip(frame_uint8, 0, 255).astype(np.uint8)
-
-    return frame_uint8
 
 
 class CameraWorker(QObject):
@@ -891,71 +878,40 @@ class PhaseSaveWorker(QObject):
 
             print("Session save directory:", session_dir)
 
-            # ============================================================
-            # Save the ROI snapshot that belongs to this capture session
-            # ============================================================
-            roi_mask_save_path = None
-            roi_params_save_path = None
+            roi_result = save_roi_snapshots(
+                session_dir,
+                self.roi_mask,
+                self.roi_params,
+            )
+            roi_mask_save_path = roi_result["roi_mask_path"]
+            roi_params_save_path = roi_result["roi_params_path"]
+            for warning in roi_result["warnings"]:
+                print(warning)
 
-            if self.roi_mask is not None:
-                try:
-                    roi_mask_array = np.asarray(self.roi_mask, dtype=bool)
-
-                    roi_mask_save_path = os.path.join(
-                        session_dir,
-                        "roi_mask.npy"
-                    )
-
-                    np.save(roi_mask_save_path, roi_mask_array)
-
+            if self.roi_mask is None:
+                print("No ROI mask was active for this phase capture.")
+            else:
+                roi_mask_array = np.asarray(self.roi_mask, dtype=bool)
+                if roi_mask_save_path is not None:
                     print("Saved ROI mask:", roi_mask_save_path)
                     print("ROI mask shape:", roi_mask_array.shape)
                     print("ROI valid pixels:", int(np.sum(roi_mask_array)))
+                    self.status_ready.emit(f"Saved ROI mask: {roi_mask_save_path}")
 
-                    self.status_ready.emit(
-                        f"Saved ROI mask: {roi_mask_save_path}"
-                    )
-
-                except Exception as e:
-                    print("Save ROI mask warning:", e)
-                    roi_mask_save_path = None
-            else:
-                print("No ROI mask was active for this phase capture.")
-
-            if self.roi_params is not None:
-                try:
-                    roi_params_save_path = os.path.join(
-                        session_dir,
-                        "roi_params.json"
-                    )
-
-                    with open(roi_params_save_path, "w", encoding="utf-8") as f:
-                        json.dump(
-                            self.roi_params,
-                            f,
-                            indent=4,
-                            ensure_ascii=False
-                        )
-
-                    print("Saved ROI parameters:", roi_params_save_path)
-
-                    self.status_ready.emit(
-                        f"Saved ROI parameters: {roi_params_save_path}"
-                    )
-
-                except Exception as e:
-                    print("Save ROI parameters warning:", e)
-                    roi_params_save_path = None
-            else:
+            if self.roi_params is None:
                 print("No ROI parameters were active for this phase capture.")
+            elif roi_params_save_path is not None:
+                print("Saved ROI parameters:", roi_params_save_path)
+                self.status_ready.emit(
+                    f"Saved ROI parameters: {roi_params_save_path}"
+                )
 
-            stack = np.asarray(self.frames)
-
-            npy_path = os.path.join(
+            npy_path, stack = save_raw_phase_stack(
                 session_dir,
-                f"{self.session_prefix}_{timestamp}_raw_stack.npy"
+                self.session_prefix,
+                timestamp,
+                self.frames,
             )
-
             np.save(npy_path, stack)
 
             print("Saved phase raw stack:", npy_path)
@@ -973,85 +929,36 @@ class PhaseSaveWorker(QObject):
                 timestamp=timestamp
             )
 
-            png_paths = []
-
-            for i, frame in enumerate(self.frames):
-                viewable_frame = raw_to_viewable_uint8(frame)
-
-                filename = f"phase_{i}_{timestamp}.png"
-                filepath = os.path.join(session_dir, filename)
-
-                imageio.imwrite(filepath, viewable_frame)
-                png_paths.append(filepath)
-
+            png_records = save_phase_pngs(
+                session_dir,
+                timestamp,
+                self.frames,
+            )
+            png_paths = [record["path"] for record in png_records]
+            for phase_index, record in enumerate(png_records):
+                filepath = record["path"]
                 print("Saved phase PNG:", filepath)
                 print(
-                    f"Phase {i}: "
-                    f"raw min={np.min(frame)}, raw max={np.max(frame)}, "
-                    f"png min={np.min(viewable_frame)}, png max={np.max(viewable_frame)}"
+                    f"Phase {phase_index}: "
+                    f"raw min={record['raw_min']}, raw max={record['raw_max']}, "
+                    f"png min={record['png_min']}, png max={record['png_max']}"
                 )
+                self.status_ready.emit(f"Saved phase {phase_index}: {filepath}")
 
-                self.status_ready.emit(f"Saved phase {i}: {filepath}")
-
-            metadata = {
-                "timestamp": timestamp,
-                "capture_type": "mixed_live_view_hardware_trigger_phase_capture_6_frames",
-                "phase_count": len(self.frames),
-                "session_dir": session_dir,
-                "raw_stack_path": npy_path,
-                "analysis_notebook_path": analysis_notebook_path,
-                "png_paths": png_paths,
-                "phase_times": self.phase_times,
-                "frame_timestamps": self.frame_timestamps,
-                "roi": {
-                    "roi_available": self.roi_mask is not None,
-                    "roi_mask_path": roi_mask_save_path,
-                    "roi_params_path": roi_params_save_path,
-                    "mask_meaning": (
-                        "True means retained valid area; "
-                        "False means masked/rejected area"
-                    )
-                },
-                "phase_capture_model": {
-                    "algorithm_id": self.psi_algorithm_id,
-                    "algorithm_name": get_psi_algorithm(
-                        self.psi_algorithm_id
-                    )["label"],
-                    "trigger_source": "Pico GP12 hardware trigger",
-                    "trigger_region": "selected one-phase-cycle window on the falling edge",
-                    "phase_order": "phase_0 to phase_5",
-                    "sampling_rule": (
-                        "The selected one-cycle phase window is divided into 6 equal intervals. "
-                        "Seven boundary points are defined, but only the first 6 are captured. "
-                        "The final 6/6 boundary point is not captured."
-                    ),
-                    "expected_phase_step_deg": get_psi_algorithm(
-                        self.psi_algorithm_id
-                    )["phase_step_deg"],
-                    "expected_phase_positions_deg": list(
-                        get_psi_algorithm(self.psi_algorithm_id)[
-                            "expected_phase_deg"
-                        ]
-                    ),
-                },
-                "note": (
-                    "Frames are ordered as phase_0 to phase_5. "
-                    "They are externally triggered by Pico GP12 within a selected one-phase-cycle window "
-                    "on the falling edge of one triangle wave. "
-                    "The selected one-cycle window is divided into six equal intervals. "
-                    "Only the first six boundary points are captured, giving expected phase positions "
-                    f"{', '.join(str(int(value)) for value in get_psi_algorithm(self.psi_algorithm_id)['expected_phase_deg'])} degrees. "
-                    "The camera returns to live view after capture."
-                )
-            }
-
-            json_path = os.path.join(
-                session_dir,
-                f"{self.session_prefix}_{timestamp}_metadata.json"
+            json_path, _metadata = save_phase_capture_metadata(
+                session_dir=session_dir,
+                timestamp=timestamp,
+                session_prefix=self.session_prefix,
+                frames=self.frames,
+                phase_times=self.phase_times,
+                frame_timestamps=self.frame_timestamps,
+                analysis_notebook_path=analysis_notebook_path,
+                png_paths=png_paths,
+                roi_available=self.roi_mask is not None,
+                roi_mask_path=roi_mask_save_path,
+                roi_params_path=roi_params_save_path,
+                psi_algorithm_id=self.psi_algorithm_id,
             )
-
-            with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(metadata, f, indent=4)
 
             print("Saved metadata:", json_path)
             self.status_ready.emit(f"Saved metadata: {json_path}")

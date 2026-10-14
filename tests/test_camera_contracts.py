@@ -359,6 +359,8 @@ class CameraContractTests(unittest.TestCase):
                     phase_times=[index * 0.1 for index in range(6)],
                     save_dir=str(save_root),
                     session_prefix="phase_calibration",
+                    roi_mask=np.ones((4, 5), dtype=bool),
+                    roi_params={"shape": "rectangle", "valid_pixels": 20},
                     psi_algorithm_id=SIX_BUCKET_60_DEG,
                 )
                 worker.run_automatic_phase_check = complete_phase_check
@@ -388,6 +390,11 @@ class CameraContractTests(unittest.TestCase):
                 self.assertTrue(
                     (session_dir / f"phase_0_{timestamp}.png").is_file()
                 )
+                self.assertTrue((session_dir / "roi_mask.npy").is_file())
+                saved_roi_params = json.loads(
+                    (session_dir / "roi_params.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual(saved_roi_params["valid_pixels"], 20)
                 metadata = json.loads(
                     (
                         session_dir
@@ -397,6 +404,11 @@ class CameraContractTests(unittest.TestCase):
                     )
                 )
                 self.assertEqual(metadata["phase_count"], 6)
+                self.assertTrue(metadata["roi"]["roi_available"])
+                self.assertEqual(
+                    Path(metadata["roi"]["roi_mask_path"]).name,
+                    "roi_mask.npy",
+                )
                 self.assertEqual(
                     metadata["phase_capture_model"]["algorithm_id"],
                     SIX_BUCKET_60_DEG,
