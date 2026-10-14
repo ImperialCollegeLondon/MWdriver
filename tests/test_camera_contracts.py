@@ -110,6 +110,34 @@ class CameraContractTests(unittest.TestCase):
             show_viewer=False,
         )
 
+    def test_analysis_cli_latest_mode_selects_newest_capture(self):
+        expected_result = object()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            capture_root = Path(temporary_directory)
+            old_session = capture_root / "phase_capture_old"
+            latest_session = capture_root / "phase_capture_latest"
+            old_session.mkdir()
+            latest_session.mkdir()
+            old_stack = old_session / "old_raw_stack.npy"
+            latest_stack = latest_session / "latest_raw_stack.npy"
+            old_stack.touch()
+            latest_stack.touch()
+            with patch.object(phase_analysis_new, "CAPTURE_DIR", capture_root):
+                with patch.object(
+                    phase_analysis_new,
+                    "analyze_capture",
+                    return_value=expected_result,
+                ) as analyze:
+                    result = phase_analysis_new.main(["--no-viewer"])
+
+        self.assertIs(result, expected_result)
+        analyze.assert_called_once_with(
+            latest_session,
+            latest_stack,
+            export_path=None,
+            show_viewer=False,
+        )
+
     def test_capture_directory_allocator_skips_existing_suffixes(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             first = allocate_capture_session_dir(
