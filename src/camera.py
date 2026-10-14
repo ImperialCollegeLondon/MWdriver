@@ -5,7 +5,7 @@ import ast
 
 os.environ["QT_API"] = "pyside6"
 
-from qtpy.QtCore import QObject, QThread, QTimer
+from qtpy.QtCore import QObject, QTimer
 
 import numpy as np
 
@@ -31,8 +31,15 @@ from camera_phase_analysis_controller import (
     CameraPhaseAnalysisController,
     PHASE_ANALYSIS_SCRIPT,
 )
+from camera_manual_capture_controller import (
+    CameraManualCaptureController,
+    FrameSaveWorker,
+    MANUAL_CAPTURE_COUNT,
+    MANUAL_CAPTURE_INTERVAL_MS,
+    SAVE_DIR,
+    SCRIPT_DIR,
+)
 from pico_serial_worker import PicoSerialWorker
-from manual_capture_worker import FrameSaveWorker
 from phase_capture_worker import PhaseSaveWorker
 from phase_capture_storage import PhaseSaveResult
 from recalibration import (
@@ -51,12 +58,6 @@ from phase_psi import (
 
 PICO_PORT = "COM4"
 PICO_BAUDRATE = 115200
-
-MANUAL_CAPTURE_COUNT = 6
-MANUAL_CAPTURE_INTERVAL_MS = 150
-
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-SAVE_DIR = os.path.join(SCRIPT_DIR, "captured_frames")
 
 # Automatic phase-point checker.
 # After every six-frame phase capture is fully saved, camera.py launches
@@ -103,6 +104,7 @@ class ThorlabsCameraViewer(
     CameraRuntimeController,
     CameraPhaseAnalysisController,
     CameraRecalibrationController,
+    CameraManualCaptureController,
     QObject,
 ):
     def __init__(self):
@@ -136,9 +138,7 @@ class ThorlabsCameraViewer(
         self.phase_capture_start_time = None
         self.phase_capture_mode_enter_time_s = None
 
-        self.manual_capture_in_progress = False
-        self.manual_capture_frames = []
-        self.manual_capture_index = 0
+        self.initialize_manual_capture_state()
 
         self.save_worker = None
         self.save_thread = None
@@ -472,104 +472,6 @@ class ThorlabsCameraViewer(
         # so skip the phase-vs-voltage plot rather than showing wrong voltages.
         self.last_capture_trigger_positions_ms = None
         self.pico_worker.request_start_phase_from_gui()
-
-    def request_manual_capture(self):
-        print("====================================")
-        print("request_manual_capture() called")
-        print("is_streaming:", self.is_streaming)
-        print("latest_raw_frame is None:", self.latest_raw_frame is None)
-        print("manual_capture_in_progress:", self.manual_capture_in_progress)
-        print("====================================")
-
-        if self.manual_capture_in_progress:
-            print("Manual capture ignored: previous capture still running.")
-            self.status_label.setText("Status: Manual capture already running")
-            return
-
-        if self.latest_raw_frame is None:
-            print("No frame available for manual capture.")
-            self.status_label.setText("Status: No frame available for manual capture")
-            return
-
-        self.manual_capture_in_progress = True
-        self.manual_capture_frames = []
-        self.manual_capture_index = 0
-
-        self.status_label.setText("Status: Manual capture started")
-        print("Manual capture started.")
-
-        self.collect_manual_frame()
-
-    def collect_manual_frame(self):
-        if self.latest_raw_frame is None:
-            print("No latest_raw_frame during manual capture.")
-            self.finish_manual_capture()
-            return
-
-        frame = self.latest_raw_frame.copy()
-        self.manual_capture_frames.append(frame)
-
-        self.manual_capture_index += 1
-
-        self.status_label.setText(
-            f"Status: Manual captured {self.manual_capture_index}/{MANUAL_CAPTURE_COUNT}"
-        )
-
-        print(
-            f"Manual captured frame "
-            f"{self.manual_capture_index}/{MANUAL_CAPTURE_COUNT}"
-        )
-
-        if self.manual_capture_index < MANUAL_CAPTURE_COUNT:
-            QTimer.singleShot(
-                MANUAL_CAPTURE_INTERVAL_MS,
-                self.collect_manual_frame
-            )
-        else:
-            self.finish_manual_capture()
-
-    def finish_manual_capture(self):
-        frames = self.manual_capture_frames.copy()
-
-        self.manual_capture_frames = []
-        self.manual_capture_index = 0
-        self.manual_capture_in_progress = False
-
-        if len(frames) == 0:
-            self.status_label.setText("Status: Manual capture failed - no frames")
-            return
-
-        self.status_label.setText("Status: Saving manual frames...")
-        print(f"Manual capture finished. Saving {len(frames)} frames...")
-
-        self.start_save_manual_frames_worker(frames)
-
-    def start_save_manual_frames_worker(self, frames):
-        if self.save_thread is not None:
-            print("Save worker is already running.")
-            self.status_label.setText("Status: Save worker already running")
-            return
-
-        self.save_thread = QThread()
-        self.save_worker = FrameSaveWorker(
-            frames=frames,
-            save_dir=SAVE_DIR,
-            prefix="manual_capture"
-        )
-
-        self.save_worker.moveToThread(self.save_thread)
-
-        self.save_thread.started.connect(self.save_worker.run)
-        self.save_worker.status_ready.connect(self.update_status)
-        self.save_worker.finished.connect(self.on_manual_save_finished)
-        self.save_worker.finished.connect(self.save_thread.quit)
-        self.save_thread.finished.connect(self.cleanup_save_worker)
-
-        self.save_thread.start()
-
-    def on_manual_save_finished(self, text):
-        print(text)
-        self.status_label.setText(f"Status: {text}")
 
     def cleanup_save_worker(self):
         self.save_worker = None
