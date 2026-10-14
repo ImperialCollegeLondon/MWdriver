@@ -10,7 +10,6 @@ import json
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Button
 from phase_psi import (
     ALGORITHMS as PSI_ALGORITHMS,
     DEFAULT_ALGORITHM as DEFAULT_PSI_ALGORITHM,
@@ -22,6 +21,7 @@ from phase_unwrap import unwrap_phase_from_center
 from phase_fourier import detect_fourier_carrier
 from phase_aberration import ZERNIKE_MODES, analyze_aberration
 from phase_analysis_plots import figure_to_rgb, render_aberration_plots
+from phase_analysis_viewer import show_analysis_result_viewer
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -456,7 +456,7 @@ def analyze_capture(
     # ---------------------------------------------------------------------
     # Show one selectable result at a time
     # ---------------------------------------------------------------------
-    def show_result_viewer():
+    if show_viewer:
         results = []
 
         for index, frame in enumerate(data):
@@ -527,92 +527,7 @@ def analyze_capture(
                 "ylabel": "Coefficient / waves",
             },
         ])
-
-        figure = plt.figure(figsize=(12, 8))
-        figure.canvas.manager.set_window_title("Phase Analysis Result Viewer")
-        image_axis = figure.add_axes([0.08, 0.08, 0.76, 0.72])
-        colorbar_axis = figure.add_axes([0.87, 0.12, 0.025, 0.64])
-        buttons = []
-
-        def display_result(result_index):
-            result = results[result_index]
-            image_axis.clear()
-            colorbar_axis.clear()
-            plot_type = result.get("plot_type", "image")
-            if plot_type == "fourier":
-                image_axis.imshow(np.log1p(result["spectrum"]), cmap="gray")
-                peak_circle = plt.Circle(
-                    (result["peak_x"], result["peak_y"]),
-                    result["mask_radius"],
-                    fill=False,
-                    linewidth=2,
-                )
-                image_axis.add_patch(peak_circle)
-                image_axis.scatter(
-                    result["peak_x"],
-                    result["peak_y"],
-                    s=45,
-                    label="First-order peak",
-                )
-                image_axis.scatter(
-                    result["dc_x"],
-                    result["dc_y"],
-                    s=45,
-                    label="DC",
-                )
-                image_axis.legend()
-                image_axis.set_xlabel("Frequency x")
-                image_axis.set_ylabel("Frequency y")
-            elif plot_type == "bar":
-                image_axis.bar(result["labels"], result["values"])
-                image_axis.axhline(0, linewidth=1)
-                image_axis.set_xlabel("Noll index")
-                image_axis.set_ylabel(result["ylabel"])
-            else:
-                image = image_axis.imshow(
-                    result["image"],
-                    cmap=result["cmap"],
-                    vmin=result.get("vmin"),
-                    vmax=result.get("vmax"),
-                )
-                image_axis.set_xlabel("x pixel")
-                image_axis.set_ylabel("y pixel")
-                figure.colorbar(
-                    image,
-                    cax=colorbar_axis,
-                    label=result["colorbar"],
-                )
-            image_axis.set_title(result["title"])
-            figure.canvas.draw_idle()
-
-        buttons_per_row = 6
-        button_width = 0.14
-        button_height = 0.045
-        button_x_start = 0.035
-        button_x_gap = 0.155
-        button_y_positions = [0.94, 0.89, 0.84]
-
-        for index, result in enumerate(results):
-            row = index // buttons_per_row
-            column = index % buttons_per_row
-            button_axis = figure.add_axes([
-                button_x_start + column * button_x_gap,
-                button_y_positions[row],
-                button_width,
-                button_height,
-            ])
-            button = Button(button_axis, result["button"])
-            button.on_clicked(
-                lambda event, result_index=index: display_result(result_index)
-            )
-            buttons.append(button)
-
-        display_result(0)
-        plt.show()
-
-
-    if show_viewer:
-        show_result_viewer()
+        show_analysis_result_viewer(results)
 
     return PhaseAnalysisResult(
         session_dir=session_dir,
