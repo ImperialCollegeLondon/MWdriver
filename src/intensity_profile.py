@@ -16,6 +16,36 @@ def build_initial_profile_line(image_height, image_width, display_downsample):
     )
 
 
+def clamp_profile_line(line_vertices, image_height, image_width, display_downsample):
+    line = np.asarray(line_vertices, dtype=float).copy()
+    display_height = image_height // display_downsample
+    display_width = image_width // display_downsample
+    line[:, 0] = np.clip(line[:, 0], 0, display_height - 1)
+    line[:, 1] = np.clip(line[:, 1], 0, display_width - 1)
+    return line
+
+
+def move_profile_line(line_vertices, drag_target, mouse_position, last_position=None):
+    line = np.asarray(line_vertices, dtype=float).copy()
+    mouse_position = np.asarray(mouse_position, dtype=float)
+    if line.ndim != 2 or line.shape[0] < 2 or line.shape[1] < 2:
+        return None, last_position
+
+    if drag_target == "p1":
+        line[0, :2] = mouse_position
+        return line, mouse_position.copy()
+    if drag_target == "p2":
+        line[-1, :2] = mouse_position
+        return line, mouse_position.copy()
+    if drag_target == "line":
+        if last_position is None:
+            return None, mouse_position.copy()
+        delta = mouse_position - np.asarray(last_position, dtype=float)
+        line[:, :2] += delta
+        return line, mouse_position.copy()
+    return None, last_position
+
+
 def sample_line_profile(raw_frame, line_vertices, display_downsample, max_points):
     if raw_frame is None:
         return None

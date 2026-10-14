@@ -6,7 +6,12 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from intensity_profile import build_initial_profile_line, sample_line_profile
+from intensity_profile import (
+    build_initial_profile_line,
+    clamp_profile_line,
+    move_profile_line,
+    sample_line_profile,
+)
 
 
 class IntensityProfileTests(unittest.TestCase):
@@ -18,6 +23,34 @@ class IntensityProfileTests(unittest.TestCase):
         )
         np.testing.assert_array_equal(line, [[270, 180], [270, 540]])
         self.assertEqual(line.dtype, np.float64)
+
+    def test_profile_line_clamping_respects_display_size_without_mutating_input(self):
+        source = np.asarray([[-2, -5], [600, 800]], dtype=float)
+        clamped = clamp_profile_line(source, 1080, 1440, 2)
+        np.testing.assert_array_equal(clamped, [[0, 0], [539, 719]])
+        np.testing.assert_array_equal(source, [[-2, -5], [600, 800]])
+
+    def test_drag_movement_handles_endpoints_whole_line_and_initial_anchor(self):
+        line = np.asarray([[1, 2], [3, 4], [5, 6]], dtype=float)
+        moved, last = move_profile_line(line, "p1", [10, 11])
+        np.testing.assert_array_equal(moved, [[10, 11], [3, 4], [5, 6]])
+        np.testing.assert_array_equal(last, [10, 11])
+
+        moved, last = move_profile_line(line, "p2", [20, 21])
+        np.testing.assert_array_equal(moved, [[1, 2], [3, 4], [20, 21]])
+        np.testing.assert_array_equal(last, [20, 21])
+
+        moved, last = move_profile_line(line, "line", [8, 9], [5, 6])
+        np.testing.assert_array_equal(moved, line + [3, 3])
+        np.testing.assert_array_equal(last, [8, 9])
+
+        moved, last = move_profile_line(line, "line", [8, 9], None)
+        self.assertIsNone(moved)
+        np.testing.assert_array_equal(last, [8, 9])
+
+        no_change, unchanged_last = move_profile_line(line, None, [8, 9], [5, 6])
+        self.assertIsNone(no_change)
+        np.testing.assert_array_equal(unchanged_last, [5, 6])
 
     def test_samples_raw_frame_along_downsampled_display_line(self):
         frame = np.arange(100, dtype=np.uint16).reshape(10, 10)

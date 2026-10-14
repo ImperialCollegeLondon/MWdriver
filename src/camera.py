@@ -54,6 +54,8 @@ from phase_analysis_controls import (
 )
 from intensity_profile import (
     build_initial_profile_line,
+    clamp_profile_line,
+    move_profile_line,
     sample_line_profile as sample_raw_line_profile,
 )
 from profile_drag import get_line_drag_target
@@ -1163,13 +1165,13 @@ class ThorlabsCameraViewer(QObject):
         if self.profile_layer is None:
             return
 
-        display_height = self.height // self.display_downsample
-        display_width = self.width // self.display_downsample
-
-        line[:, 0] = np.clip(line[:, 0], 0, display_height - 1)
-        line[:, 1] = np.clip(line[:, 1], 0, display_width - 1)
-
-        self.profile_layer.data = [line.copy()]
+        clamped_line = clamp_profile_line(
+            line,
+            self.height,
+            self.width,
+            self.display_downsample,
+        )
+        self.profile_layer.data = [clamped_line]
 
         self.profile_update_counter = self.profile_update_interval - 1
         self.update_intensity_profile()
@@ -1186,31 +1188,18 @@ class ThorlabsCameraViewer(QObject):
 
     def move_profile_line_by_mouse(self, mouse_pos):
         line = self.get_profile_line_data()
-
         if line is None:
             return
-
-        if self.profile_drag_target == "p1":
-            line[0] = mouse_pos
-            self.profile_drag_last_pos = mouse_pos
-
-        elif self.profile_drag_target == "p2":
-            line[-1] = mouse_pos
-            self.profile_drag_last_pos = mouse_pos
-
-        elif self.profile_drag_target == "line":
-            if self.profile_drag_last_pos is None:
-                self.profile_drag_last_pos = mouse_pos
-                return
-
-            delta = mouse_pos - self.profile_drag_last_pos
-            line = line + delta
-            self.profile_drag_last_pos = mouse_pos
-
-        else:
+        moved_line, last_position = move_profile_line(
+            line,
+            self.profile_drag_target,
+            mouse_pos,
+            self.profile_drag_last_pos,
+        )
+        self.profile_drag_last_pos = last_position
+        if moved_line is None:
             return
-
-        self.set_profile_line_data(line)
+        self.set_profile_line_data(moved_line)
 
     def on_profile_mouse_drag(self, viewer, event):
         """
