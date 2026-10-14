@@ -92,6 +92,7 @@ from recalibration import (
     compute_coarse_refined_positions_ms,
     compute_iterative_refined_positions_ms as compute_iterative_refined_positions,
     decide_incomplete_capture_action,
+    decide_verification_capture_action,
     enforce_minimum_trigger_spacing_ms,
     is_strict_recalibration_pass,
     score_recalibration_candidate,
@@ -4190,48 +4191,55 @@ class ThorlabsCameraViewer(QObject):
                 phase_error,
                 RECALIBRATION_CONFIG,
             )
+            verification_action = decide_verification_capture_action(
+                verification_passed=verification_passed,
+                has_pending_pass_candidate=(
+                    self.recalibration_pending_pass_candidate is not None
+                ),
+                verification_capture_count=(
+                    self.recalibration_verification_capture_count
+                ),
+                config=RECALIBRATION_CONFIG,
+            )
 
-            if verification_passed:
+            if verification_action == "confirm":
                 previous_pass_candidate = self.recalibration_pending_pass_candidate
 
-                if previous_pass_candidate is not None:
-                    selected_candidate = select_best_recalibration_candidate(
-                        [previous_pass_candidate, candidate]
-                    )
-                    self.finalize_recalibration_candidate(
-                        selected_candidate=selected_candidate,
-                        fallback_used=False,
-                    )
+                selected_candidate = select_best_recalibration_candidate(
+                    [previous_pass_candidate, candidate]
+                )
+                self.finalize_recalibration_candidate(
+                    selected_candidate=selected_candidate,
+                    fallback_used=False,
+                )
 
-                    self.phase_label.setText(
-                        "Phase Capture: Recalibration confirmed"
-                    )
-                    self.status_label.setText(
-                        "Status: Recalibration confirmed by two passing "
-                        "verification captures; kept the better session"
-                    )
-                    return
+                self.phase_label.setText(
+                    "Phase Capture: Recalibration confirmed"
+                )
+                self.status_label.setText(
+                    "Status: Recalibration confirmed by two passing "
+                    "verification captures; kept the better session"
+                )
+                return
 
-                if (
-                    self.recalibration_verification_capture_count
-                    >= RECALIBRATION_CONFIG.max_verification_captures
-                ):
-                    best_candidate = select_best_recalibration_candidate(
-                        self.recalibration_candidates
-                    )
-                    self.finalize_recalibration_candidate(
-                        selected_candidate=best_candidate,
-                        fallback_used=True,
-                    )
-                    self.phase_label.setText(
-                        "Phase Capture: Best candidate kept without confirmation"
-                    )
-                    self.status_label.setText(
-                        "Status: Verification limit reached before a second "
-                        "confirmation; kept the best candidate"
-                    )
-                    return
+            if verification_action == "keep_best":
+                best_candidate = select_best_recalibration_candidate(
+                    self.recalibration_candidates
+                )
+                self.finalize_recalibration_candidate(
+                    selected_candidate=best_candidate,
+                    fallback_used=True,
+                )
+                self.phase_label.setText(
+                    "Phase Capture: Best candidate kept without confirmation"
+                )
+                self.status_label.setText(
+                    "Status: Verification limit reached before a second "
+                    "confirmation; kept the best candidate"
+                )
+                return
 
+            if verification_action == "await_confirmation":
                 self.recalibration_pending_pass_candidate = candidate
                 self.phase_label.setText(
                     "Phase Capture: Recalibration confirmation capture"
@@ -4245,10 +4253,7 @@ class ThorlabsCameraViewer(QObject):
 
             self.recalibration_pending_pass_candidate = None
 
-            if (
-                self.recalibration_verification_capture_count
-                >= RECALIBRATION_CONFIG.max_verification_captures
-            ):
+            if verification_action == "evaluate_best":
                 best_candidate = select_best_recalibration_candidate(
                     self.recalibration_candidates
                 )

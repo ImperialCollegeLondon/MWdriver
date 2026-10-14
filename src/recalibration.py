@@ -59,6 +59,23 @@ def decide_incomplete_capture_action(
     return IncompleteCaptureDecision("abort")
 
 
+def decide_verification_capture_action(
+    verification_passed,
+    has_pending_pass_candidate,
+    verification_capture_count,
+    config,
+):
+    if verification_passed:
+        if has_pending_pass_candidate:
+            return "confirm"
+        if verification_capture_count >= config.max_verification_captures:
+            return "keep_best"
+        return "await_confirmation"
+    if verification_capture_count >= config.max_verification_captures:
+        return "evaluate_best"
+    return "refine"
+
+
 def _minimum_spacing(config, camera_required_spacing_ms, requested_spacing_ms=None):
     return max(
         config.safe_trigger_spacing_ms,

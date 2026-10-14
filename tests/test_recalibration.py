@@ -14,6 +14,7 @@ from recalibration import (
     compute_coarse_refined_positions_ms,
     enforce_minimum_trigger_spacing_ms,
     decide_incomplete_capture_action,
+    decide_verification_capture_action,
     is_strict_recalibration_pass,
     score_recalibration_candidate,
     select_best_recalibration_candidate,
@@ -24,6 +25,32 @@ from recalibration import (
 
 
 class RecalibrationValidationTests(unittest.TestCase):
+    def test_verification_capture_progression_actions(self):
+        config = RecalibrationConfig(max_refinement_rounds=2)
+        cases = [
+            (True, True, 2, "confirm"),
+            (True, False, 2, "await_confirmation"),
+            (True, False, 3, "keep_best"),
+            (False, False, 2, "refine"),
+            (False, False, 3, "evaluate_best"),
+        ]
+
+        for passed, has_pending, capture_count, expected in cases:
+            with self.subTest(
+                passed=passed,
+                has_pending=has_pending,
+                capture_count=capture_count,
+            ):
+                self.assertEqual(
+                    decide_verification_capture_action(
+                        verification_passed=passed,
+                        has_pending_pass_candidate=has_pending,
+                        verification_capture_count=capture_count,
+                        config=config,
+                    ),
+                    expected,
+                )
+
     def test_incomplete_capture_decision_outcomes(self):
         config = RecalibrationConfig(max_incomplete_verification_retries=2)
         cases = [

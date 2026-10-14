@@ -31,6 +31,7 @@ from phase_psi import SIX_BUCKET_60_DEG
 from recalibration import (
     DEFAULT_RECALIBRATION_CONFIG,
     compute_iterative_refined_positions_ms,
+    decide_verification_capture_action,
     select_best_recalibration_candidate,
 )
 from roi_controls import create_roi_menu
@@ -652,6 +653,7 @@ class CameraContractTests(unittest.TestCase):
             "PhaseSaveResult": PhaseSaveResult,
             "RECALIBRATION_CONFIG": camera.RECALIBRATION_CONFIG,
             "is_strict_recalibration_pass": camera.is_strict_recalibration_pass,
+            "decide_verification_capture_action": decide_verification_capture_action,
             "select_best_recalibration_candidate": select_best_recalibration_candidate,
         }
         exec(compile(handler_module, str(camera_path), "exec"), handler_namespace)
