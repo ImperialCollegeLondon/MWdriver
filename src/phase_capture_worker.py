@@ -163,6 +163,14 @@ class PhaseSaveWorker(QObject):
                 self.frames,
                 self.psi_algorithm_id,
             )
+            for name, values in (
+                ("phase_times", self.phase_times),
+                ("frame_timestamps", self.frame_timestamps),
+            ):
+                if values is not None and len(values) != len(frames):
+                    raise ValueError(
+                        f"Expected {len(frames)} {name}, got {len(values)}."
+                    )
 
             os.makedirs(self.save_dir, exist_ok=True)
             print("====================================")

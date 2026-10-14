@@ -119,6 +119,34 @@ class CameraContractTests(unittest.TestCase):
                         "Expected phase frame stack|equally shaped 2D images",
                     )
 
+    def test_phase_save_worker_rejects_misaligned_timing_metadata_before_session(self):
+        frames = [np.ones((4, 5), dtype=np.uint16) for _ in range(6)]
+        cases = [
+            ("phase_times", [0.0] * 5, None),
+            ("frame_timestamps", None, [{"phase_index": index} for index in range(5)]),
+        ]
+
+        for field_name, phase_times, frame_timestamps in cases:
+            with self.subTest(field=field_name):
+                with tempfile.TemporaryDirectory() as temporary_directory:
+                    save_dir = Path(temporary_directory, "captures")
+                    worker = camera.PhaseSaveWorker(
+                        frames=frames,
+                        phase_times=phase_times,
+                        frame_timestamps=frame_timestamps,
+                        save_dir=str(save_dir),
+                    )
+                    results = []
+                    worker.result_ready.connect(results.append)
+
+                    worker.run()
+
+                    result = results[0]
+                    self.assertFalse(result.save_success)
+                    self.assertIn(field_name, result.error)
+                    self.assertIsNone(result.session_dir)
+                    self.assertFalse(save_dir.exists())
+
     def test_controller_applies_selected_layer_visibility_plan(self):
         camera_layer = SimpleNamespace(visible=True)
         roi_layer = SimpleNamespace(visible=True)
