@@ -885,6 +885,23 @@ class CameraContractTests(unittest.TestCase):
             self.assertEqual(len(result["warnings"]), 1)
             self.assertIn("mask device unavailable", result["warnings"][0])
 
+    def test_optional_roi_params_write_failure_is_reported_without_blocking_mask(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with patch(
+                "phase_capture_storage.json.dump",
+                side_effect=OSError("parameter device unavailable"),
+            ):
+                result = save_roi_snapshots(
+                    temporary_directory,
+                    np.ones((3, 4), dtype=bool),
+                    {"roi_type": "rectangle"},
+                )
+
+            self.assertTrue(Path(result["roi_mask_path"]).is_file())
+            self.assertIsNone(result["roi_params_path"])
+            self.assertEqual(len(result["warnings"]), 1)
+            self.assertIn("parameter device unavailable", result["warnings"][0])
+
     def test_png_write_failure_returns_failed_result_but_keeps_raw_stack(self):
         frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
         with tempfile.TemporaryDirectory() as temporary_directory:
