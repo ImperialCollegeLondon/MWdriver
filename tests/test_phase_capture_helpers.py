@@ -6,7 +6,10 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from phase_capture_frame_filter import should_accept_phase_frame
+from phase_capture_frame_filter import (
+    decide_native_phase_frame,
+    should_accept_phase_frame,
+)
 from phase_capture_timestamps import (
     build_phase_timestamp_payload,
     normalize_frame_framestamp,
@@ -15,6 +18,48 @@ from phase_capture_timestamps import (
 
 
 class PhaseCaptureFrameFilterTests(unittest.TestCase):
+    def test_native_frame_decision_accepts_matching_external_acquisition(self):
+        decision = decide_native_phase_frame(
+            {
+                "acquisition_index": 4,
+                "trigger_mode": "ext",
+                "acquisition_id": 12,
+            },
+            expected_acquisition_id=12,
+        )
+
+        self.assertEqual(decision.status, "accepted")
+        self.assertEqual(decision.phase_index, 4)
+
+    def test_native_frame_decision_falls_back_without_native_index(self):
+        decision = decide_native_phase_frame(
+            {"trigger_mode": "ext", "acquisition_id": 12},
+            expected_acquisition_id=12,
+        )
+
+        self.assertEqual(decision.status, "fallback")
+        self.assertIsNone(decision.phase_index)
+
+    def test_native_frame_decision_rejects_wrong_mode_stale_or_invalid_index(self):
+        base = {
+            "acquisition_index": 2,
+            "trigger_mode": "ext",
+            "acquisition_id": 12,
+        }
+        wrong_mode = decide_native_phase_frame(
+            {**base, "trigger_mode": "live"}, 12
+        )
+        stale = decide_native_phase_frame(
+            {**base, "acquisition_id": 11}, 12
+        )
+        invalid = decide_native_phase_frame(
+            {**base, "acquisition_index": 6}, 12
+        )
+
+        self.assertEqual(wrong_mode.status, "wrong_trigger_mode")
+        self.assertEqual(stale.status, "stale_acquisition")
+        self.assertEqual(invalid.status, "invalid_index")
+
     def test_rejects_missing_or_complete_capture(self):
         self.assertFalse(should_accept_phase_frame(None, 5.0, 1.0))
         self.assertFalse(should_accept_phase_frame(6, 5.0, 1.0))

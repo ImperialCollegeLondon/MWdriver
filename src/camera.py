@@ -43,7 +43,10 @@ from phase_capture_timestamps import (
     build_phase_timestamp_payload,
     normalize_frame_framestamp,
 )
-from phase_capture_frame_filter import should_accept_phase_frame
+from phase_capture_frame_filter import (
+    decide_native_phase_frame,
+    should_accept_phase_frame,
+)
 from roi_geometry import (
     apply_mask_to_frame,
     build_inside_mask,
@@ -2493,22 +2496,30 @@ class ThorlabsCameraViewer(QObject):
             print("Extra external-trigger frame received after 6/6; ignoring.")
             return
 
-        acquisition_index = (
-            frame_meta.get("acquisition_index")
-            if isinstance(frame_meta, dict) else None
+        native_decision = decide_native_phase_frame(
+            frame_meta,
+            expected_acquisition_id=getattr(
+                self.cam,
+                "acquisition_id",
+                object(),
+            ),
+            phase_count=PHASE_CAPTURE_COUNT,
         )
-        if acquisition_index is not None:
-            if frame_meta.get("trigger_mode") != "ext":
-                print("Ignoring queued live-view frame during phase capture.")
-                return
-            if frame_meta.get("acquisition_id") != self.cam.acquisition_id:
-                print("Ignoring frame from an earlier camera acquisition.")
-                return
-            if not 0 <= acquisition_index < PHASE_CAPTURE_COUNT:
-                print(f"Unexpected native acquisition index {acquisition_index}; ignoring.")
-                return
+        if native_decision.status == "wrong_trigger_mode":
+            print("Ignoring queued live-view frame during phase capture.")
+            return
+        if native_decision.status == "stale_acquisition":
+            print("Ignoring frame from an earlier camera acquisition.")
+            return
+        if native_decision.status == "invalid_index":
+            acquisition_index = frame_meta.get("acquisition_index")
+            print(
+                f"Unexpected native acquisition index {acquisition_index}; ignoring."
+            )
+            return
+        if native_decision.status == "accepted":
             self.assign_phase_frame(
-                phase_index=acquisition_index,
+                phase_index=native_decision.phase_index,
                 raw_frame=raw_frame,
                 source_text="native external frame",
                 frame_meta=frame_meta,
