@@ -41,6 +41,7 @@ from phase_capture_timestamps import (
 from phase_capture_frame_filter import should_accept_phase_frame
 from roi_geometry import build_inside_mask
 from roi_controls import create_roi_menu
+from profile_controls import create_profile_controls
 from phase_capture_storage import (
     allocate_capture_session_dir,
     generate_phase_analysis_notebook,
@@ -1668,39 +1669,11 @@ class ThorlabsCameraViewer(QObject):
             print("ROI control panel ready.")
 
     def init_profile_controls(self):
-        self.profile_controls_widget = QWidget()
-        self.profile_controls_widget.setObjectName("embedded_profile_controls")
-
-        profile_layout = QVBoxLayout()
-        profile_layout.setContentsMargins(0, 0, 0, 0)
-        profile_layout.setSpacing(6)
-
-        title_label = QLabel("Intensity Profile Control:")
-        title_label.setStyleSheet("font-weight: bold;")
-
-        profile_button_layout = QHBoxLayout()
-        profile_button_layout.setContentsMargins(0, 0, 0, 0)
-        profile_button_layout.setSpacing(6)
-
-        self.profile_button = QPushButton("Intensity Profile")
-        self.clear_profile_button = QPushButton("Clear Profile")
-
-        self.profile_button.setMinimumHeight(28)
-        self.clear_profile_button.setMinimumHeight(28)
-
-        profile_button_layout.addWidget(self.profile_button)
-        profile_button_layout.addWidget(self.clear_profile_button)
-
-        info_label = QLabel(
-            "Draw a yellow line, then drag the line or its endpoints to update the curve."
-        )
-        info_label.setWordWrap(True)
-
-        profile_layout.addWidget(title_label)
-        profile_layout.addLayout(profile_button_layout)
-        profile_layout.addWidget(info_label)
-
-        self.profile_controls_widget.setLayout(profile_layout)
+        (
+            self.profile_controls_widget,
+            self.profile_button,
+            self.clear_profile_button,
+        ) = create_profile_controls()
 
         self.profile_button.clicked.connect(self.start_intensity_profile)
         self.clear_profile_button.clicked.connect(self.clear_intensity_profile)

@@ -30,6 +30,8 @@ from recalibration import (
     compute_iterative_refined_positions_ms,
 )
 from roi_controls import create_roi_menu
+from profile_controls import create_profile_controls
+from qtpy.QtWidgets import QApplication
 
 
 class LabelStub:
@@ -58,6 +60,17 @@ class FakeSignal:
 
 
 class CameraContractTests(unittest.TestCase):
+    def test_profile_controls_widget_has_expected_buttons(self):
+        application = QApplication.instance() or QApplication([])
+        widget, profile_button, clear_button = create_profile_controls()
+        self.addCleanup(widget.deleteLater)
+        self.assertIsNotNone(application)
+        self.assertEqual(widget.objectName(), "embedded_profile_controls")
+        self.assertEqual(profile_button.text(), "Intensity Profile")
+        self.assertEqual(clear_button.text(), "Clear Profile")
+        self.assertEqual(profile_button.minimumHeight(), 28)
+        self.assertEqual(clear_button.minimumHeight(), 28)
+
     def test_roi_menu_actions_preserve_order_labels_and_callbacks(self):
         class FakeAction:
             def __init__(self, label, parent):
