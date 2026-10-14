@@ -90,6 +90,39 @@ class CameraContractTests(unittest.TestCase):
         self.assertTrue(viewer.closed)
         self.assertTrue(event.accepted)
 
+    def test_application_bootstrap_cleans_up_if_event_loop_returns(self):
+        viewer = SimpleNamespace(
+            closed_count=0,
+            viewer=SimpleNamespace(
+                window=SimpleNamespace(_qt_window=SimpleNamespace())
+            ),
+        )
+        viewer.close = lambda: setattr(viewer, "closed_count", viewer.closed_count + 1)
+
+        run_application(lambda: viewer, lambda: None)
+
+        self.assertEqual(viewer.closed_count, 1)
+
+    def test_application_bootstrap_cleanup_is_idempotent_after_close_event(self):
+        class FakeEvent:
+            def accept(self):
+                self.accepted = True
+
+        viewer = SimpleNamespace(
+            closed_count=0,
+            viewer=SimpleNamespace(
+                window=SimpleNamespace(_qt_window=SimpleNamespace())
+            ),
+        )
+        viewer.close = lambda: setattr(viewer, "closed_count", viewer.closed_count + 1)
+
+        run_application(
+            lambda: viewer,
+            lambda: viewer.viewer.window._qt_window.closeEvent(FakeEvent()),
+        )
+
+        self.assertEqual(viewer.closed_count, 1)
+
     def test_profile_controls_widget_has_expected_buttons(self):
         application = QApplication.instance() or QApplication([])
         widget, profile_button, clear_button = create_profile_controls()
