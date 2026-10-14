@@ -181,6 +181,37 @@ class CameraContractTests(unittest.TestCase):
         )
         self.assertTrue(serial_port.flushed)
 
+    def test_pico_worker_dispatches_capture_lifecycle_messages(self):
+        worker = camera.PicoSerialWorker(port="COM4")
+        started = []
+        requested_phases = []
+        completed = []
+        manual_captures = []
+        messages = []
+        worker.phase_session_started.connect(lambda: started.append(True))
+        worker.phase_requested.connect(requested_phases.append)
+        worker.phase_session_done.connect(lambda: completed.append(True))
+        worker.capture_requested.connect(lambda: manual_captures.append(True))
+        worker.message_ready.connect(messages.append)
+
+        for line in (
+            "TRIANGLE_START",
+            "CAPTURE_PHASE_0",
+            "CAPTURE_PHASE_5",
+            "CAPTURE_PHASE_6",
+            "CAPTURE_PHASE_invalid",
+            "TRIANGLE_DONE",
+            "START_CAPTURE",
+        ):
+            worker.handle_serial_line(line)
+
+        self.assertEqual(started, [True])
+        self.assertEqual(requested_phases, [0, 5])
+        self.assertEqual(completed, [True])
+        self.assertEqual(manual_captures, [True])
+        self.assertTrue(any("out of range: 6" in message for message in messages))
+        self.assertTrue(any("phase parse error" in message for message in messages))
+
     def test_pico_ack_parser_records_positions_and_rejections(self):
         viewer = SimpleNamespace(
             last_trigger_update_ack_positions_ms=None,

@@ -393,6 +393,26 @@ class PicoSerialWorker(QObject):
             except Exception as e:
                 self.message_ready.emit(f"Pico command send error: {e}")
 
+    def handle_serial_line(self, line):
+        if line == "TRIANGLE_START":
+            self.phase_session_started.emit()
+        elif line.startswith("CAPTURE_PHASE_"):
+            try:
+                phase_index = int(line.split("_")[-1])
+
+                if 0 <= phase_index < PHASE_CAPTURE_COUNT:
+                    self.phase_requested.emit(phase_index)
+                else:
+                    self.message_ready.emit(
+                        f"Pico phase index out of range: {phase_index}"
+                    )
+            except Exception as error:
+                self.message_ready.emit(f"Pico phase parse error: {error}")
+        elif line == "TRIANGLE_DONE":
+            self.phase_session_done.emit()
+        elif line == "START_CAPTURE":
+            self.capture_requested.emit()
+
     def run(self):
         self.running = True
 
@@ -432,31 +452,7 @@ class PicoSerialWorker(QObject):
                         continue
 
                     self.message_ready.emit(f"Pico says: {line}")
-
-                    if line == "TRIANGLE_START":
-                        self.phase_session_started.emit()
-
-                    elif line.startswith("CAPTURE_PHASE_"):
-                        try:
-                            phase_index = int(line.split("_")[-1])
-
-                            if 0 <= phase_index < PHASE_CAPTURE_COUNT:
-                                self.phase_requested.emit(phase_index)
-                            else:
-                                self.message_ready.emit(
-                                    f"Pico phase index out of range: {phase_index}"
-                                )
-
-                        except Exception as e:
-                            self.message_ready.emit(
-                                f"Pico phase parse error: {e}"
-                            )
-
-                    elif line == "TRIANGLE_DONE":
-                        self.phase_session_done.emit()
-
-                    elif line == "START_CAPTURE":
-                        self.capture_requested.emit()
+                    self.handle_serial_line(line)
 
         except Exception as e:
             self.status_ready.emit(f"Pico: Error - {e}")
