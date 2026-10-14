@@ -52,7 +52,10 @@ from phase_analysis_controls import (
     build_analysis_layer_presentation,
     create_phase_analysis_controls,
 )
-from intensity_profile import sample_line_profile as sample_raw_line_profile
+from intensity_profile import (
+    build_initial_profile_line,
+    sample_line_profile as sample_raw_line_profile,
+)
 from profile_drag import get_line_drag_target
 from roi_storage import load_roi_files, save_roi_files
 from phase_capture_storage import (
@@ -1926,17 +1929,11 @@ class ThorlabsCameraViewer(QObject):
         if self.viewer.layers.selection.active is not self.layer:
             self.show_camera_preview()
 
-        display_height = self.height // self.display_downsample
-        display_width = self.width // self.display_downsample
-
-        y = display_height / 2
-        x1 = display_width * 0.25
-        x2 = display_width * 0.75
-
-        line_data = np.array([
-            [y, x1],
-            [y, x2]
-        ], dtype=float)
+        line_data = build_initial_profile_line(
+            self.height,
+            self.width,
+            self.display_downsample,
+        )
 
         if self.profile_layer is None:
             self.profile_layer = self.viewer.add_shapes(

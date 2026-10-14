@@ -6,10 +6,19 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from intensity_profile import sample_line_profile
+from intensity_profile import build_initial_profile_line, sample_line_profile
 
 
 class IntensityProfileTests(unittest.TestCase):
+    def test_initial_line_is_centered_and_uses_quarter_width_endpoints(self):
+        line = build_initial_profile_line(
+            image_height=1080,
+            image_width=1440,
+            display_downsample=2,
+        )
+        np.testing.assert_array_equal(line, [[270, 180], [270, 540]])
+        self.assertEqual(line.dtype, np.float64)
+
     def test_samples_raw_frame_along_downsampled_display_line(self):
         frame = np.arange(100, dtype=np.uint16).reshape(10, 10)
         profile = sample_line_profile(

@@ -3,6 +3,19 @@
 import numpy as np
 
 
+def build_initial_profile_line(image_height, image_width, display_downsample):
+    display_height = image_height // display_downsample
+    display_width = image_width // display_downsample
+    center_y = display_height / 2.0
+    return np.asarray(
+        [
+            [center_y, display_width * 0.25],
+            [center_y, display_width * 0.75],
+        ],
+        dtype=float,
+    )
+
+
 def sample_line_profile(raw_frame, line_vertices, display_downsample, max_points):
     if raw_frame is None:
         return None
