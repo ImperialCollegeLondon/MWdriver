@@ -27,7 +27,6 @@ from qtpy.QtWidgets import (
 )
 
 import numpy as np
-import imageio.v2 as imageio
 
 from thorlabs_native_camera import NativeThorlabsCamera
 
@@ -44,7 +43,6 @@ from phase_capture_storage import (
     allocate_capture_session_dir,
     generate_phase_analysis_notebook,
     PhaseSaveResult,
-    raw_to_viewable_uint8,
     save_phase_capture_metadata,
     save_phase_pngs,
     save_raw_phase_stack,
@@ -52,6 +50,7 @@ from phase_capture_storage import (
 )
 from phase_capture_process import run_phase_check
 from pico_serial_worker import PicoSerialWorker
+from manual_capture_worker import FrameSaveWorker
 from recalibration import (
     DEFAULT_RECALIBRATION_CONFIG,
     build_even_trigger_positions_ms,
@@ -304,74 +303,6 @@ class CameraWorker(QObject):
 
     def stop(self):
         self.running = False
-
-
-class FrameSaveWorker(QObject):
-    status_ready = Signal(str)
-    finished = Signal(str)
-
-    def __init__(self, frames, save_dir="captured_frames", prefix="manual_capture"):
-        super().__init__()
-
-        self.frames = frames
-        self.save_dir = save_dir
-        self.prefix = prefix
-
-    def run(self):
-        try:
-            os.makedirs(self.save_dir, exist_ok=True)
-
-            print("====================================")
-            print("Frame save worker started")
-            print("Current working directory:", os.getcwd())
-            print("Save directory:", self.save_dir)
-            print("Number of frames:", len(self.frames))
-            print("====================================")
-
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-
-            stack = np.asarray(self.frames)
-
-            npy_path = os.path.join(
-                self.save_dir,
-                f"{self.prefix}_{timestamp}_raw_stack.npy"
-            )
-
-            np.save(npy_path, stack)
-
-            print("Saved raw stack:", npy_path)
-            print("Raw stack shape:", stack.shape)
-            print("Raw stack dtype:", stack.dtype)
-            print("Raw stack min:", np.min(stack))
-            print("Raw stack max:", np.max(stack))
-
-            self.status_ready.emit(f"Saved raw stack: {npy_path}")
-
-            for i, frame in enumerate(self.frames):
-                viewable_frame = raw_to_viewable_uint8(frame)
-
-                filename = f"{self.prefix}_{timestamp}_{i + 1:02d}.png"
-                filepath = os.path.join(self.save_dir, filename)
-
-                imageio.imwrite(filepath, viewable_frame)
-
-                print("Saved viewable PNG:", filepath)
-                print(
-                    f"PNG {i + 1}: "
-                    f"raw min={np.min(frame)}, raw max={np.max(frame)}, "
-                    f"png min={np.min(viewable_frame)}, png max={np.max(viewable_frame)}"
-                )
-
-                self.status_ready.emit(f"Saved PNG: {filepath}")
-
-            self.finished.emit(
-                f"{self.prefix} saved: {len(self.frames)} frames"
-            )
-
-        except Exception as e:
-            error_text = f"{self.prefix} save error: {e}"
-            self.finished.emit(error_text)
-            print(error_text)
 
 
 class PhaseSaveWorker(QObject):

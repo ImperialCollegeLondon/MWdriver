@@ -160,6 +160,37 @@ class CameraContractTests(unittest.TestCase):
             self.assertEqual(Path(next_path).name, "phase_capture_20261014_120300_03")
             self.assertTrue(Path(next_path).is_dir())
 
+    def test_manual_capture_worker_preserves_stack_and_numbered_pngs(self):
+        timestamp = "20261014_120500"
+        frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            worker = camera.FrameSaveWorker(
+                frames,
+                save_dir=temporary_directory,
+                prefix="manual_capture",
+            )
+            finished = []
+            statuses = []
+            worker.finished.connect(finished.append)
+            worker.status_ready.connect(statuses.append)
+
+            with patch.object(camera.time, "strftime", return_value=timestamp):
+                worker.run()
+
+            stack = np.load(
+                Path(temporary_directory)
+                / f"manual_capture_{timestamp}_raw_stack.npy"
+            )
+            self.assertEqual(stack.shape, (6, 4, 5))
+            self.assertTrue(
+                (Path(temporary_directory) / f"manual_capture_{timestamp}_01.png").is_file()
+            )
+            self.assertTrue(
+                (Path(temporary_directory) / f"manual_capture_{timestamp}_06.png").is_file()
+            )
+            self.assertEqual(finished, ["manual_capture saved: 6 frames"])
+            self.assertEqual(len(statuses), 7)
+
     def test_notebook_writer_retargets_stack_and_clears_code_outputs(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             template_path = Path(temporary_directory, "template.ipynb")
