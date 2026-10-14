@@ -361,28 +361,6 @@ def analyze_capture(
             f"{mode_name:<24} {coefficient:+.6f}"
         )
 
-    fourier_figure, fourier_axis = plt.subplots(figsize=(12, 7))
-    fourier_axis.imshow(np.log1p(fourier_spectrum), cmap="gray")
-    fourier_axis.add_patch(plt.Circle(
-        (fourier_peak_x, fourier_peak_y),
-        fourier_mask_radius,
-        fill=False,
-        linewidth=2,
-    ))
-    fourier_axis.scatter(
-        fourier_peak_x,
-        fourier_peak_y,
-        s=45,
-        label="First-order peak",
-    )
-    fourier_axis.scatter(fourier_cx, fourier_cy, s=45, label="DC")
-    fourier_axis.set_title("Detected First-order Fourier Peak")
-    fourier_axis.set_xlabel("Frequency x")
-    fourier_axis.set_ylabel("Frequency y")
-    fourier_axis.legend()
-    fourier_figure.tight_layout()
-    fourier_peak_plot_rgb = figure_to_rgb(fourier_figure)
-
     print(
         f"centre x = {aberration_result.pupil_center_x}, "
         f"centre y = {aberration_result.pupil_center_y}"
