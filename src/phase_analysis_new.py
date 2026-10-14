@@ -152,6 +152,15 @@ def save_result_images(result_dir, result_images):
             plt.imsave(path, array)
 
 
+def write_analysis_export(export_path, output_arrays):
+    if export_path is None:
+        return None
+    export_path = Path(export_path).resolve()
+    export_path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(export_path, **output_arrays)
+    return export_path
+
+
 def build_argument_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -676,7 +685,6 @@ def analyze_capture(
 
     valid_output_mask = ~mask
     if export_path is not None:
-        export_path.parent.mkdir(parents=True, exist_ok=True)
         output_arrays = {
             f"phase_{index}": np.where(valid_output_mask, frame, np.nan).astype(
                 np.float32
@@ -715,7 +723,7 @@ def analyze_capture(
             "aberration_composition_plot_rgb": aberration_composition_plot_rgb,
             "residual_nm": residual_surface_nm.filled(np.nan).astype(np.float32),
         })
-        np.savez(export_path, **output_arrays)
+        export_path = write_analysis_export(export_path, output_arrays)
         print("Saved phase analysis results:")
         print(export_path)
 

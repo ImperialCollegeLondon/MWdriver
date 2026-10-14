@@ -272,6 +272,23 @@ class CameraContractTests(unittest.TestCase):
         self.assertTrue(callable(phase_analysis_new.analyze_capture))
         self.assertFalse(hasattr(phase_analysis_new, "session_dir"))
 
+    def test_analysis_export_writer_creates_parent_and_preserves_arrays(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            export_path = Path(temporary_directory) / "nested" / "results.npz"
+            output_path = phase_analysis_new.write_analysis_export(
+                export_path,
+                {
+                    "wrapped": np.asarray([[0.1, 0.2]], dtype=np.float32),
+                    "algorithm_id": np.asarray("six_frame_90deg"),
+                },
+            )
+            self.assertEqual(output_path, export_path.resolve())
+            self.assertTrue(output_path.is_file())
+            with np.load(output_path) as results:
+                self.assertEqual(results["wrapped"].dtype, np.float32)
+                np.testing.assert_allclose(results["wrapped"], [[0.1, 0.2]])
+                self.assertEqual(results["algorithm_id"].item(), "six_frame_90deg")
+
     def test_analysis_cli_main_preserves_export_and_no_viewer_options(self):
         session_dir = Path("capture-session")
         stack_path = session_dir / "capture_raw_stack.npy"
