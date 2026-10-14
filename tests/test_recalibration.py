@@ -16,6 +16,7 @@ from recalibration import (
     decide_incomplete_capture_action,
     is_strict_recalibration_pass,
     score_recalibration_candidate,
+    select_best_recalibration_candidate,
     should_auto_restart_recalibration,
     validate_coarse_measurement,
     validate_trigger_positions_ms,
@@ -97,6 +98,24 @@ class RecalibrationValidationTests(unittest.TestCase):
         self.assertEqual(candidate["count_error_over_5"], 4)
         self.assertEqual(candidate["count_error_over_10"], 3)
         self.assertEqual(candidate["score"][:3], (3, 50.0, 4))
+
+    def test_best_candidate_uses_lowest_score_and_preserves_first_tie(self):
+        first = {"score": (1, 10.0), "session_dir": "first"}
+        tied = {"score": (1, 10.0), "session_dir": "tied"}
+        worse = {"score": (2, 1.0), "session_dir": "worse"}
+
+        self.assertIs(
+            select_best_recalibration_candidate([first, tied, worse]),
+            first,
+        )
+        self.assertIs(
+            select_best_recalibration_candidate([worse, tied]),
+            tied,
+        )
+
+    def test_best_candidate_requires_nonempty_candidates(self):
+        with self.assertRaisesRegex(ValueError, "At least one"):
+            select_best_recalibration_candidate([])
 
     def test_auto_restart_thresholds(self):
         self.assertTrue(

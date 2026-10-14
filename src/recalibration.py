@@ -429,6 +429,12 @@ def score_recalibration_candidate(
     }
 
 
+def select_best_recalibration_candidate(candidates):
+    if not candidates:
+        raise ValueError("At least one recalibration candidate is required.")
+    return min(candidates, key=lambda candidate: candidate["score"])
+
+
 def should_auto_restart_recalibration(
     candidate,
     config,

@@ -95,6 +95,7 @@ from recalibration import (
     enforce_minimum_trigger_spacing_ms,
     is_strict_recalibration_pass,
     score_recalibration_candidate,
+    select_best_recalibration_candidate,
     should_auto_restart_recalibration as should_auto_restart_candidate,
     validate_coarse_measurement,
     validate_trigger_positions_ms as validate_recalibration_trigger_positions_ms,
@@ -2895,9 +2896,8 @@ class ThorlabsCameraViewer(QObject):
             self.recalibration_incomplete_verification_retries += 1
             retry_verification_capture = True
         elif incomplete_capture_decision.action == "keep_best":
-            best_candidate = min(
-                self.recalibration_candidates,
-                key=lambda candidate_item: candidate_item["score"],
+            best_candidate = select_best_recalibration_candidate(
+                self.recalibration_candidates
             )
             self.finalize_recalibration_candidate(
                 selected_candidate=best_candidate,
@@ -4195,9 +4195,8 @@ class ThorlabsCameraViewer(QObject):
                 previous_pass_candidate = self.recalibration_pending_pass_candidate
 
                 if previous_pass_candidate is not None:
-                    selected_candidate = min(
-                        [previous_pass_candidate, candidate],
-                        key=lambda candidate_item: candidate_item["score"],
+                    selected_candidate = select_best_recalibration_candidate(
+                        [previous_pass_candidate, candidate]
                     )
                     self.finalize_recalibration_candidate(
                         selected_candidate=selected_candidate,
@@ -4217,9 +4216,8 @@ class ThorlabsCameraViewer(QObject):
                     self.recalibration_verification_capture_count
                     >= RECALIBRATION_CONFIG.max_verification_captures
                 ):
-                    best_candidate = min(
-                        self.recalibration_candidates,
-                        key=lambda candidate_item: candidate_item["score"],
+                    best_candidate = select_best_recalibration_candidate(
+                        self.recalibration_candidates
                     )
                     self.finalize_recalibration_candidate(
                         selected_candidate=best_candidate,
@@ -4251,9 +4249,8 @@ class ThorlabsCameraViewer(QObject):
                 self.recalibration_verification_capture_count
                 >= RECALIBRATION_CONFIG.max_verification_captures
             ):
-                best_candidate = min(
-                    self.recalibration_candidates,
-                    key=lambda candidate_item: candidate_item["score"],
+                best_candidate = select_best_recalibration_candidate(
+                    self.recalibration_candidates
                 )
 
                 if self.should_auto_restart_recalibration(best_candidate):
