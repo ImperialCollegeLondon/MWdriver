@@ -32,6 +32,7 @@ from thorlabs_native_camera import NativeThorlabsCamera
 
 import napari
 from application_bootstrap import run_application
+from layer_visibility import build_layer_visibility_plan
 
 import matplotlib.pyplot as plt
 
@@ -681,31 +682,21 @@ class ThorlabsCameraViewer(QObject):
                 self.create_phase_analysis_controls(
                     selected_key=analysis_record["selected_key"]
                 )
-                self.layer.visible = False
-                self.roi_layer.visible = False
-                for time_series_layer in self.phase_capture_time_series_layers:
-                    time_series_layer.visible = False
-                for record in self.phase_analysis_layer_records:
-                    record["layer"].visible = record is analysis_record
+                self.apply_layer_visibility_plan(
+                    "analysis",
+                    selected_layer=active_layer,
+                )
                 if self.view_phase_analysis_button is not None:
                     self.view_phase_analysis_button.setText("Return to Camera Preview")
             elif active_layer is self.layer:
                 self.show_camera_preview()
             elif active_layer is self.roi_layer:
-                self.layer.visible = True
-                self.roi_layer.visible = True
-                for record in self.phase_analysis_layer_records:
-                    record["layer"].visible = False
-                for time_series_layer in self.phase_capture_time_series_layers:
-                    time_series_layer.visible = False
+                self.apply_layer_visibility_plan("roi")
             elif active_layer in self.phase_capture_time_series_layers:
-                self.layer.visible = False
-                if self.roi_layer is not None:
-                    self.roi_layer.visible = True
-                for record in self.phase_analysis_layer_records:
-                    record["layer"].visible = False
-                for time_series_layer in self.phase_capture_time_series_layers:
-                    time_series_layer.visible = time_series_layer is active_layer
+                self.apply_layer_visibility_plan(
+                    "time_series",
+                    selected_layer=active_layer,
+                )
 
             self.sync_stream_with_active_layer()
 
@@ -736,6 +727,27 @@ class ThorlabsCameraViewer(QObject):
         ]
         if event.value is self.phase_analysis_layer:
             self.phase_analysis_layer = None
+
+    def apply_layer_visibility_plan(self, mode, selected_layer=None):
+        plan = build_layer_visibility_plan(
+            mode,
+            [record["layer"] for record in self.phase_analysis_layer_records],
+            self.phase_capture_time_series_layers,
+            selected_layer=selected_layer,
+        )
+        self.layer.visible = plan.camera_visible
+        if self.roi_layer is not None:
+            self.roi_layer.visible = plan.roi_visible
+        for record, visible in zip(
+            self.phase_analysis_layer_records,
+            plan.analysis_layers_visible,
+        ):
+            record["layer"].visible = visible
+        for layer, visible in zip(
+            self.phase_capture_time_series_layers,
+            plan.time_series_layers_visible,
+        ):
+            layer.visible = visible
 
     def sync_stream_with_active_layer(self):
         preview_streaming = (
@@ -1696,12 +1708,7 @@ class ThorlabsCameraViewer(QObject):
         self.status_label.setText("Status: Circle ROI mode")
 
     def prepare_roi_drawing(self):
-        self.layer.visible = True
-        self.roi_layer.visible = True
-        for record in self.phase_analysis_layer_records:
-            record["layer"].visible = False
-        for time_series_layer in self.phase_capture_time_series_layers:
-            time_series_layer.visible = False
+        self.apply_layer_visibility_plan("roi")
         self.phase_analysis_view_active = False
         if self.view_phase_analysis_button is not None:
             self.view_phase_analysis_button.setText("View Analysis Results")
@@ -3008,14 +3015,10 @@ class ThorlabsCameraViewer(QObject):
         self.phase_capture_time_series_layers.append(time_series_layer)
         self.pending_phase_capture_layer = time_series_layer
 
-        self.layer.visible = False
-        for record in self.phase_analysis_layer_records:
-            record["layer"].visible = False
-        if self.roi_layer is not None:
-            self.roi_layer.visible = True
-        for previous_layer in self.phase_capture_time_series_layers[:-1]:
-            previous_layer.visible = False
-        time_series_layer.visible = True
+        self.apply_layer_visibility_plan(
+            "time_series",
+            selected_layer=time_series_layer,
+        )
         self.viewer.layers.selection.active = time_series_layer
         self.viewer.reset_view()
         print(
@@ -3398,25 +3401,15 @@ class ThorlabsCameraViewer(QObject):
                     self.phase_analysis_layer.contrast_limits = contrast_limits
             current_record["selected_key"] = result_key
 
-        self.phase_analysis_layer.visible = True
-        self.layer.visible = False
-        self.roi_layer.visible = False
-        for record in self.phase_analysis_layer_records:
-            if record["layer"] is not self.phase_analysis_layer:
-                record["layer"].visible = False
-        for time_series_layer in self.phase_capture_time_series_layers:
-            time_series_layer.visible = False
+        self.apply_layer_visibility_plan(
+            "analysis",
+            selected_layer=self.phase_analysis_layer,
+        )
         self.viewer.layers.selection.active = self.phase_analysis_layer
         self.viewer.reset_view()
 
     def show_camera_preview(self):
-        for record in self.phase_analysis_layer_records:
-            record["layer"].visible = False
-        for time_series_layer in self.phase_capture_time_series_layers:
-            time_series_layer.visible = False
-        self.layer.visible = True
-        if self.roi_layer is not None:
-            self.roi_layer.visible = True
+        self.apply_layer_visibility_plan("preview")
         self.phase_analysis_view_active = False
         if self.view_phase_analysis_button is not None:
             self.view_phase_analysis_button.setText("View Analysis Results")

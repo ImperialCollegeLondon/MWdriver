@@ -69,6 +69,37 @@ class FakeSignal:
 
 
 class CameraContractTests(unittest.TestCase):
+    def test_controller_applies_selected_layer_visibility_plan(self):
+        camera_layer = SimpleNamespace(visible=True)
+        roi_layer = SimpleNamespace(visible=True)
+        analysis_layers = [SimpleNamespace(visible=True), SimpleNamespace(visible=True)]
+        time_series_layers = [SimpleNamespace(visible=True), SimpleNamespace(visible=True)]
+        viewer = SimpleNamespace(
+            layer=camera_layer,
+            roi_layer=roi_layer,
+            phase_analysis_layer_records=[
+                {"layer": layer} for layer in analysis_layers
+            ],
+            phase_capture_time_series_layers=time_series_layers,
+        )
+
+        camera.ThorlabsCameraViewer.apply_layer_visibility_plan(
+            viewer,
+            "analysis",
+            selected_layer=analysis_layers[1],
+        )
+
+        self.assertFalse(camera_layer.visible)
+        self.assertFalse(roi_layer.visible)
+        self.assertEqual(
+            [layer.visible for layer in analysis_layers],
+            [False, True],
+        )
+        self.assertEqual(
+            [layer.visible for layer in time_series_layers],
+            [False, False],
+        )
+
     def test_analysis_layer_operation_covers_add_replace_and_update(self):
         cases = [
             (
