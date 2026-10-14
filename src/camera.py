@@ -44,6 +44,7 @@ from phase_capture_timestamps import (
     normalize_frame_framestamp,
 )
 from phase_capture_frame_filter import (
+    decide_framestamp_phase_slot,
     decide_native_phase_frame,
     should_accept_phase_frame,
 )
@@ -2551,41 +2552,44 @@ class ThorlabsCameraViewer(QObject):
         except Exception:
             framestamp = None
 
-        if framestamp is not None:
-            rounded = int(round(framestamp))
-            if 1 <= rounded <= PHASE_CAPTURE_COUNT:
-                target_index = rounded - 1
+        framestamp_decision = decide_framestamp_phase_slot(
+            framestamp,
+            phase_count=PHASE_CAPTURE_COUNT,
+        )
+        if framestamp_decision.status == "valid":
+            rounded = framestamp_decision.rounded_framestamp
+            target_index = framestamp_decision.phase_index
 
-                # Assign any earlier queued frames to lower empty phase slots
-                # before assigning the current valid framestamp frame.
-                if self.unassigned_triggered_frames:
-                    for slot in range(target_index):
-                        if not self.unassigned_triggered_frames:
-                            break
-                        if self.phase_capture_frames[slot] is None:
-                            queued_frame, queued_meta = self.unassigned_triggered_frames.pop(0)
-                            self.assign_phase_frame(
-                                phase_index=slot,
-                                raw_frame=queued_frame,
-                                source_text=f"queued frame assigned to phase {slot}",
-                                frame_meta=queued_meta,
-                            )
+            # Assign any earlier queued frames to lower empty phase slots
+            # before assigning the current valid framestamp frame.
+            if self.unassigned_triggered_frames:
+                for slot in range(target_index):
+                    if not self.unassigned_triggered_frames:
+                        break
+                    if self.phase_capture_frames[slot] is None:
+                        queued_frame, queued_meta = self.unassigned_triggered_frames.pop(0)
+                        self.assign_phase_frame(
+                            phase_index=slot,
+                            raw_frame=queued_frame,
+                            source_text=f"queued frame assigned to phase {slot}",
+                            frame_meta=queued_meta,
+                        )
 
-                if self.phase_capture_frames[target_index] is None:
-                    phase_index = target_index
-                    source_text = f"framestamp external frame ({rounded})"
-                else:
-                    print(
-                        f"Frame with framestamp {rounded} already assigned; ignoring duplicate/stale frame."
-                    )
-                    return
+            if self.phase_capture_frames[target_index] is None:
+                phase_index = target_index
+                source_text = f"framestamp external frame ({rounded})"
             else:
                 print(
-                    f"Camera framestamp {framestamp} out of expected range; "
-                    "holding frame until a valid phase framestamp arrives."
+                    f"Frame with framestamp {rounded} already assigned; ignoring duplicate/stale frame."
                 )
-                self.unassigned_triggered_frames.append((raw_frame.copy(), frame_meta))
                 return
+        elif framestamp_decision.status == "out_of_range":
+            print(
+                f"Camera framestamp {framestamp} out of expected range; "
+                "holding frame until a valid phase framestamp arrives."
+            )
+            self.unassigned_triggered_frames.append((raw_frame.copy(), frame_meta))
+            return
         elif self.phase_capture_count == 0:
             print(
                 "No phase framestamp on first external-trigger frame; "

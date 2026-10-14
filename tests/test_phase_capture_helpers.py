@@ -7,6 +7,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from phase_capture_frame_filter import (
+    decide_framestamp_phase_slot,
     decide_native_phase_frame,
     should_accept_phase_frame,
 )
@@ -18,6 +19,25 @@ from phase_capture_timestamps import (
 
 
 class PhaseCaptureFrameFilterTests(unittest.TestCase):
+    def test_framestamp_decision_rounds_and_maps_one_based_stamp_to_slot(self):
+        decision = decide_framestamp_phase_slot(4.7)
+
+        self.assertEqual(decision.status, "valid")
+        self.assertEqual(decision.rounded_framestamp, 5)
+        self.assertEqual(decision.phase_index, 4)
+
+    def test_framestamp_decision_reports_missing_and_out_of_range(self):
+        missing = decide_framestamp_phase_slot(None)
+        too_early = decide_framestamp_phase_slot(0.4)
+        too_late = decide_framestamp_phase_slot(6.6)
+
+        self.assertEqual(missing.status, "missing")
+        self.assertIsNone(missing.phase_index)
+        self.assertEqual(too_early.status, "out_of_range")
+        self.assertEqual(too_early.rounded_framestamp, 0)
+        self.assertEqual(too_late.status, "out_of_range")
+        self.assertEqual(too_late.rounded_framestamp, 7)
+
     def test_native_frame_decision_accepts_matching_external_acquisition(self):
         decision = decide_native_phase_frame(
             {

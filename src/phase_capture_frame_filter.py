@@ -8,6 +8,30 @@ class NativePhaseFrameDecision:
     phase_index: int | None = None
 
 
+@dataclass(frozen=True)
+class FramestampPhaseDecision:
+    status: str
+    rounded_framestamp: int | None = None
+    phase_index: int | None = None
+
+
+def decide_framestamp_phase_slot(framestamp, phase_count=6):
+    if framestamp is None:
+        return FramestampPhaseDecision("missing")
+
+    rounded_framestamp = int(round(framestamp))
+    if not 1 <= rounded_framestamp <= phase_count:
+        return FramestampPhaseDecision(
+            "out_of_range",
+            rounded_framestamp=rounded_framestamp,
+        )
+    return FramestampPhaseDecision(
+        "valid",
+        rounded_framestamp=rounded_framestamp,
+        phase_index=rounded_framestamp - 1,
+    )
+
+
 def decide_native_phase_frame(frame_meta, expected_acquisition_id, phase_count=6):
     if not isinstance(frame_meta, dict):
         return NativePhaseFrameDecision("fallback")
