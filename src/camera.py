@@ -51,6 +51,7 @@ from profile_controls import create_profile_controls
 from phase_analysis_controls import create_phase_analysis_controls
 from intensity_profile import sample_line_profile as sample_raw_line_profile
 from profile_drag import get_line_drag_target
+from roi_storage import load_roi_files, save_roi_files
 from phase_capture_storage import (
     allocate_capture_session_dir,
     generate_phase_analysis_notebook,
@@ -1830,44 +1831,13 @@ class ThorlabsCameraViewer(QObject):
         print("ROI and mask cleared.")
 
     def reload_roi(self):
-        roi_json_path = os.path.join(SCRIPT_DIR, "roi_params.json")
-        roi_mask_path = os.path.join(SCRIPT_DIR, "roi_mask.npy")
-
         try:
-            with open(roi_json_path, "r", encoding="utf-8") as file:
-                roi_params = json.load(file)
-            roi_mask = np.asarray(
-                np.load(roi_mask_path, allow_pickle=False),
-                dtype=bool,
+            roi_params, roi_mask, shape_data, shape_type = load_roi_files(
+                SCRIPT_DIR,
+                image_height=self.height,
+                image_width=self.width,
+                display_downsample=self.display_downsample,
             )
-
-            expected_shape = (self.height, self.width)
-            if roi_mask.shape != expected_shape:
-                raise ValueError(
-                    f"saved mask shape {roi_mask.shape} does not match "
-                    f"camera shape {expected_shape}"
-                )
-
-            raw_coordinates = roi_params.get("raw_coordinates", {})
-            x_min = float(raw_coordinates["x_min"]) / self.display_downsample
-            x_max = float(raw_coordinates["x_max"]) / self.display_downsample
-            y_min = float(raw_coordinates["y_min"]) / self.display_downsample
-            y_max = float(raw_coordinates["y_max"]) / self.display_downsample
-
-            roi_type = roi_params.get("roi_type")
-            if roi_type == "rectangle":
-                shape_type = "rectangle"
-            elif roi_type == "circle_or_ellipse":
-                shape_type = "ellipse"
-            else:
-                raise ValueError(f"unsupported ROI type: {roi_type!r}")
-
-            shape_data = np.array([
-                [y_min, x_min],
-                [y_min, x_max],
-                [y_max, x_max],
-                [y_max, x_min],
-            ], dtype=float)
 
             self.waiting_for_roi_finish = False
             self.roi_layer.data = []
@@ -1892,7 +1862,11 @@ class ThorlabsCameraViewer(QObject):
 
             self.roi_label.setText(f"ROI: Reloaded - {saved_mask_mode}")
             self.status_label.setText("Status: Saved ROI reloaded")
-            print("Saved ROI reloaded:", roi_json_path, roi_mask_path)
+            print(
+                "Saved ROI reloaded:",
+                os.path.join(SCRIPT_DIR, "roi_params.json"),
+                os.path.join(SCRIPT_DIR, "roi_mask.npy"),
+            )
 
         except Exception as error:
             self.status_label.setText(f"Status: Reload ROI failed: {error}")
@@ -1921,14 +1895,11 @@ class ThorlabsCameraViewer(QObject):
         self.current_display_mask = self.make_display_mask_from_raw_mask(valid_mask)
         self.display_mask_enabled = True
 
-        base_dir = os.getcwd()
-        roi_json_path = os.path.join(base_dir, "roi_params.json")
-        roi_mask_path = os.path.join(base_dir, "roi_mask.npy")
-
-        with open(roi_json_path, "w", encoding="utf-8") as f:
-            json.dump(self.roi_params, f, indent=4)
-
-        np.save(roi_mask_path, self.roi_mask)
+        roi_json_path, roi_mask_path = save_roi_files(
+            os.getcwd(),
+            self.roi_params,
+            self.roi_mask,
+        )
 
         self.roi_label.setText(f"ROI: Saved - {mask_mode_text}")
         self.status_label.setText("Status: ROI and mask saved")
