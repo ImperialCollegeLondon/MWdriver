@@ -6,7 +6,12 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from roi_geometry import build_inside_mask
+from roi_geometry import (
+    apply_mask_to_frame,
+    build_inside_mask,
+    build_valid_mask,
+    downsample_mask,
+)
 
 
 class RoiGeometryTests(unittest.TestCase):
@@ -62,6 +67,41 @@ class RoiGeometryTests(unittest.TestCase):
             build_inside_mask([[1, 2]], "ellipse", 8, 10, 1),
             (None, None, None),
         )
+
+    def test_valid_mask_polarity_and_display_downsampling(self):
+        inside = np.asarray(
+            [[True, True, False, False], [True, True, False, False],
+             [False, False, True, True], [False, False, True, True]],
+            dtype=bool,
+        )
+        outside_mode_mask, outside_mode = build_valid_mask(inside, "outside")
+        inside_mode_mask, inside_mode = build_valid_mask(inside, "inside")
+        self.assertEqual(outside_mode, "mask_outside_area")
+        self.assertEqual(inside_mode, "mask_inside_area")
+        np.testing.assert_array_equal(outside_mode_mask, inside)
+        np.testing.assert_array_equal(inside_mode_mask, np.logical_not(inside))
+
+        display_mask = downsample_mask(outside_mode_mask, 2)
+        np.testing.assert_array_equal(display_mask, [[True, False], [False, True]])
+        self.assertTrue(display_mask.flags.c_contiguous)
+
+    def test_display_mask_application_preserves_disabled_or_mismatched_frames(self):
+        frame = np.arange(9, dtype=np.uint8).reshape(3, 3)
+        mask = np.asarray([[True, False], [False, True]], dtype=bool)
+        self.assertIs(apply_mask_to_frame(frame, mask, enabled=True), frame)
+        self.assertIs(apply_mask_to_frame(frame, None, enabled=True), frame)
+        self.assertIs(apply_mask_to_frame(frame, mask, enabled=False), frame)
+
+        full_mask = np.asarray(
+            [[True, False, True], [False, True, True], [True, True, False]],
+            dtype=bool,
+        )
+        masked = apply_mask_to_frame(frame, full_mask, enabled=True)
+        np.testing.assert_array_equal(
+            masked,
+            [[0, 0, 2], [0, 4, 5], [6, 7, 0]],
+        )
+        np.testing.assert_array_equal(frame, np.arange(9, dtype=np.uint8).reshape(3, 3))
 
 
 if __name__ == "__main__":

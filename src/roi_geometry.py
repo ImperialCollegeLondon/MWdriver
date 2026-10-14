@@ -69,3 +69,25 @@ def build_inside_mask(roi_vertices, roi_type, image_height, image_width, display
         "display_downsample": display_downsample,
     }
     return inside_mask, roi_type, roi_info
+
+
+def build_valid_mask(inside_mask, mask_mode):
+    if mask_mode == "inside":
+        return np.logical_not(inside_mask), "mask_inside_area"
+    return np.asarray(inside_mask, dtype=bool), "mask_outside_area"
+
+
+def downsample_mask(raw_mask, display_downsample):
+    if raw_mask is None:
+        return None
+    if display_downsample > 1:
+        raw_mask = raw_mask[::display_downsample, ::display_downsample]
+    return np.ascontiguousarray(raw_mask)
+
+
+def apply_mask_to_frame(display_frame, display_mask, enabled):
+    if not enabled or display_mask is None or display_mask.shape != display_frame.shape:
+        return display_frame
+    masked_frame = display_frame.copy()
+    masked_frame[np.logical_not(display_mask)] = 0
+    return masked_frame
