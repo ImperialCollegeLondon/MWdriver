@@ -44,6 +44,7 @@ from roi_geometry import build_inside_mask
 from roi_controls import create_roi_menu
 from profile_controls import create_profile_controls
 from phase_analysis_controls import create_phase_analysis_controls
+from intensity_profile import sample_line_profile as sample_raw_line_profile
 from phase_capture_storage import (
     allocate_capture_session_dir,
     generate_phase_analysis_notebook,
@@ -2132,37 +2133,12 @@ class ThorlabsCameraViewer(QObject):
         if self.latest_raw_frame is None:
             return None
 
-        line = np.asarray(self.profile_layer.data[-1], dtype=float)
-
-        if line.shape[0] < 2:
-            return None
-
-        y1_display, x1_display = line[0]
-        y2_display, x2_display = line[-1]
-
-        scale = self.display_downsample
-
-        y1 = y1_display * scale
-        x1 = x1_display * scale
-        y2 = y2_display * scale
-        x2 = x2_display * scale
-
-        length = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-
-        if length < 2:
-            return None
-
-        n_points = int(min(max(length, 10), self.profile_sample_points))
-
-        xs = np.linspace(x1, x2, n_points)
-        ys = np.linspace(y1, y2, n_points)
-
-        xs_i = np.clip(np.round(xs).astype(int), 0, self.width - 1)
-        ys_i = np.clip(np.round(ys).astype(int), 0, self.height - 1)
-
-        profile = self.latest_raw_frame[ys_i, xs_i].astype(float)
-
-        return profile
+        return sample_raw_line_profile(
+            raw_frame=self.latest_raw_frame,
+            line_vertices=self.profile_layer.data[-1],
+            display_downsample=self.display_downsample,
+            max_points=self.profile_sample_points,
+        )
 
     def update_intensity_profile(self):
         if not self.profile_enabled:
