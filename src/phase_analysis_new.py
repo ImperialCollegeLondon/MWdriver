@@ -372,17 +372,6 @@ def analyze_capture(
             f"{mode_name:<24} {coefficient:+.6f}"
         )
 
-    print("Zernike coefficients before piston/tilt removal (waves):")
-    for mode, coefficient in zip(
-        ZERNIKE_MODES,
-        zernike_coefficients_before_correction,
-    ):
-        mode_index, n, m, mode_name = mode
-        print(
-            f"J{mode_index:02d} n={n}, m={m:2d} "
-            f"{mode_name:<24} {coefficient:+.6f}"
-        )
-
     aberration_component_labels = [
         "Astigmatism\nJ5/J6",
         "Coma\nJ7/J8",
