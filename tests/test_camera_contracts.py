@@ -22,6 +22,7 @@ import check_measured_vs_expected_phase as phase_check
 import phase_analysis_new
 from phase_capture_process import PhaseCheckResult, run_phase_check
 from phase_capture_storage import (
+    NotebookGenerationResult,
     PhaseSaveResult,
     allocate_capture_session_dir,
     generate_phase_analysis_notebook,
@@ -612,6 +613,55 @@ class CameraContractTests(unittest.TestCase):
         self.assertFalse(result.generated)
         self.assertIsNone(result.path)
         self.assertIn("template not found", result.message)
+
+    def test_notebook_generation_failure_does_not_fail_capture_save(self):
+        timestamp = "20261014_120604"
+        frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            def complete_phase_check(session_dir):
+                check_path = Path(session_dir) / "measured_phase_check.json"
+                check_path.write_text(
+                    json.dumps({"measured_phase_deg": [0, 60, 120, 180, 240, 300]}),
+                    encoding="utf-8",
+                )
+                figure_path = Path(session_dir) / "measured_vs_expected_phase_annotated.png"
+                figure_path.touch()
+                return PhaseCheckResult(
+                    True,
+                    "checker passed",
+                    0,
+                    str(figure_path),
+                    str(check_path),
+                )
+
+            worker = camera.PhaseSaveWorker(
+                frames=frames,
+                save_dir=temporary_directory,
+                session_prefix="phase_capture",
+            )
+            worker.run_automatic_phase_check = complete_phase_check
+            results = []
+            worker.result_ready.connect(results.append)
+            with (
+                patch.object(camera.time, "strftime", return_value=timestamp),
+                patch.object(
+                    phase_capture_worker,
+                    "generate_phase_analysis_notebook",
+                    return_value=NotebookGenerationResult(
+                        False,
+                        None,
+                        "Create phase analysis notebook error: disk unavailable",
+                    ),
+                ),
+            ):
+                worker.run()
+
+            result = results[0]
+            self.assertTrue(result.save_success)
+            self.assertTrue(result.phase_check_success)
+            self.assertTrue(Path(result.raw_stack_path).is_file())
+            self.assertTrue(Path(result.metadata_path).is_file())
 
     @staticmethod
     def load_controller_method(method_name, namespace):
