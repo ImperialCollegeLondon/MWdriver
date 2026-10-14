@@ -35,6 +35,7 @@ from application_bootstrap import run_application
 from layer_visibility import build_layer_visibility_plan
 from stream_policy import get_camera_stream_mode
 from camera_frames import prepare_display_frame
+from worker_lifecycle import stop_worker_thread
 
 import matplotlib.pyplot as plt
 
@@ -2149,12 +2150,7 @@ class ThorlabsCameraViewer(QObject):
 
         self.is_streaming = False
 
-        if self.worker is not None:
-            self.worker.stop()
-
-        if self.worker_thread is not None:
-            self.worker_thread.quit()
-            self.worker_thread.wait()
+        stop_worker_thread(self.worker, self.worker_thread)
 
         self.worker = None
         self.worker_thread = None
