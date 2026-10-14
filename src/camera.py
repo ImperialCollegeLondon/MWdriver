@@ -42,6 +42,7 @@ from phase_capture_timestamps import (
     normalize_frame_framestamp,
 )
 from phase_capture_frame_filter import should_accept_phase_frame
+from phase_capture_storage import allocate_capture_session_dir
 from recalibration import (
     DEFAULT_RECALIBRATION_CONFIG,
     build_even_trigger_positions_ms,
@@ -882,29 +883,11 @@ class PhaseSaveWorker(QObject):
 
             timestamp = time.strftime("%Y%m%d_%H%M%S")
 
-            # Create one new subfolder for this phase-capture session.
-            # Example:
-            # captured_frames/phase_capture_20260706_153012/
-            session_dir = os.path.join(
+            session_dir = allocate_capture_session_dir(
                 self.save_dir,
-                f"{self.session_prefix}_{timestamp}"
+                self.session_prefix,
+                timestamp,
             )
-
-            # If two captures start within the same second, avoid overwriting by
-            # adding _01, _02, ...
-            if os.path.exists(session_dir):
-                suffix = 1
-                while True:
-                    candidate_dir = os.path.join(
-                        self.save_dir,
-                        f"{self.session_prefix}_{timestamp}_{suffix:02d}"
-                    )
-                    if not os.path.exists(candidate_dir):
-                        session_dir = candidate_dir
-                        break
-                    suffix += 1
-
-            os.makedirs(session_dir, exist_ok=True)
 
             print("Session save directory:", session_dir)
 

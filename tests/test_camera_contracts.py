@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import camera
 import check_measured_vs_expected_phase as phase_check
+from phase_capture_storage import allocate_capture_session_dir
 from phase_psi import SIX_BUCKET_60_DEG
 from recalibration import (
     DEFAULT_RECALIBRATION_CONFIG,
@@ -41,6 +42,28 @@ class FakeSerial:
 
 
 class CameraContractTests(unittest.TestCase):
+    def test_capture_directory_allocator_skips_existing_suffixes(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            first = allocate_capture_session_dir(
+                temporary_directory,
+                "phase_capture",
+                "20261014_120300",
+            )
+            Path(temporary_directory, "phase_capture_20261014_120300_01").mkdir()
+            Path(temporary_directory, "phase_capture_20261014_120300_02").write_text(
+                "occupied",
+                encoding="utf-8",
+            )
+            next_path = allocate_capture_session_dir(
+                temporary_directory,
+                "phase_capture",
+                "20261014_120300",
+            )
+
+            self.assertEqual(Path(first).name, "phase_capture_20261014_120300")
+            self.assertEqual(Path(next_path).name, "phase_capture_20261014_120300_03")
+            self.assertTrue(Path(next_path).is_dir())
+
     @staticmethod
     def load_controller_method(method_name, namespace):
         camera_path = ROOT / "src" / "camera.py"
