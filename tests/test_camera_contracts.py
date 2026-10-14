@@ -1120,6 +1120,46 @@ class CameraContractTests(unittest.TestCase):
             self.assertIn("png disk failure", result.error)
             self.assertTrue(Path(result.raw_stack_path).is_file())
 
+    def test_partial_png_write_failure_preserves_completed_png_and_raw_stack(self):
+        timestamp = "20261014_120603"
+        frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
+        write_count = 0
+
+        def fail_after_first_png(path, image):
+            nonlocal write_count
+            write_count += 1
+            if write_count == 2:
+                raise OSError("second PNG disk failure")
+            Path(path).write_bytes(b"first PNG placeholder")
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            worker = camera.PhaseSaveWorker(
+                frames=frames,
+                save_dir=temporary_directory,
+                session_prefix="phase_capture",
+            )
+            results = []
+            worker.result_ready.connect(results.append)
+            with (
+                patch.object(camera.time, "strftime", return_value=timestamp),
+                patch(
+                    "phase_capture_storage.imageio.imwrite",
+                    side_effect=fail_after_first_png,
+                ),
+                patch.object(worker, "run_automatic_phase_check") as phase_check,
+            ):
+                worker.run()
+
+            result = results[0]
+            session_dir = Path(result.session_dir)
+            self.assertFalse(result.save_success)
+            self.assertIn("second PNG disk failure", result.error)
+            self.assertTrue(Path(result.raw_stack_path).is_file())
+            self.assertTrue((session_dir / f"phase_0_{timestamp}.png").is_file())
+            self.assertFalse((session_dir / f"phase_1_{timestamp}.png").exists())
+            self.assertIsNone(result.metadata_path)
+            phase_check.assert_not_called()
+
     def test_metadata_write_failure_returns_failed_result_after_required_artifacts(self):
         frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
         with tempfile.TemporaryDirectory() as temporary_directory:
