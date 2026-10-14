@@ -6,8 +6,8 @@ its session metadata. Older captures default to the legacy 90-degree method.
 from pathlib import Path
 from math import factorial
 from dataclasses import dataclass
+import argparse
 import json
-import sys
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -150,23 +150,38 @@ def save_result_images(result_dir, result_images):
             plt.imsave(path, array)
 
 
-def get_export_path():
-    if "--export" not in sys.argv:
-        return None
+def build_argument_parser():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "session_dir",
+        nargs="?",
+        type=Path,
+        help="capture session directory; defaults to the latest phase_capture session",
+    )
+    parser.add_argument(
+        "--no-viewer",
+        action="store_true",
+        help="save results without opening the interactive viewer",
+    )
+    parser.add_argument(
+        "--export",
+        type=Path,
+        metavar="OUTPUT_NPZ",
+        help="write analysis arrays to an NPZ file",
+    )
+    return parser
 
-    option_index = sys.argv.index("--export")
-    if option_index + 1 >= len(sys.argv):
-        raise ValueError("--export requires an output .npz path.")
 
-    return Path(sys.argv[option_index + 1]).resolve()
+def get_export_path(export_path):
+    return None if export_path is None else Path(export_path).resolve()
 
 
 # ---------------------------------------------------------------------
 # Find and load a camera phase-capture session
 # ---------------------------------------------------------------------
-def find_capture_input():
-    if len(sys.argv) >= 2:
-        session_dir = Path(sys.argv[1])
+def find_capture_input(session_dir=None):
+    if session_dir is not None:
+        session_dir = Path(session_dir)
         if not session_dir.is_absolute():
             session_dir = (BASE_DIR / session_dir).resolve()
         if not session_dir.is_dir():
@@ -936,14 +951,16 @@ def analyze_capture(
     )
 
 
-def main():
-    session_dir, raw_stack_path = find_capture_input()
+def main(argv=None):
+    arguments = build_argument_parser().parse_args(argv)
+    session_dir, raw_stack_path = find_capture_input(arguments.session_dir)
     return analyze_capture(
         session_dir,
         raw_stack_path,
-        export_path=get_export_path(),
-        show_viewer="--no-viewer" not in sys.argv,
+        export_path=get_export_path(arguments.export),
+        show_viewer=not arguments.no_viewer,
     )
+
 
 if __name__ == "__main__":
     main()

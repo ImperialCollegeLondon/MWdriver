@@ -66,23 +66,47 @@ class CameraContractTests(unittest.TestCase):
             ),
             patch.object(
                 phase_analysis_new,
-                "get_export_path",
-                return_value=Path("results.npz"),
-            ),
-            patch.object(
-                phase_analysis_new,
                 "analyze_capture",
                 return_value=expected_result,
             ) as analyze,
-            patch.object(sys, "argv", ["phase_analysis_new.py", "--no-viewer", "--export", "results.npz"]),
         ):
-            result = phase_analysis_new.main()
+            result = phase_analysis_new.main([
+                str(session_dir),
+                "--no-viewer",
+                "--export",
+                "results.npz",
+            ])
 
         self.assertIs(result, expected_result)
         analyze.assert_called_once_with(
             session_dir,
             stack_path,
-            export_path=Path("results.npz"),
+            export_path=Path("results.npz").resolve(),
+            show_viewer=False,
+        )
+
+    def test_analysis_cli_options_allow_latest_session_mode(self):
+        expected_result = object()
+        with (
+            patch.object(
+                phase_analysis_new,
+                "find_capture_input",
+                return_value=(Path("latest-session"), Path("latest-stack.npy")),
+            ) as find_input,
+            patch.object(
+                phase_analysis_new,
+                "analyze_capture",
+                return_value=expected_result,
+            ) as analyze,
+        ):
+            result = phase_analysis_new.main(["--no-viewer"])
+
+        self.assertIs(result, expected_result)
+        find_input.assert_called_once_with(None)
+        analyze.assert_called_once_with(
+            Path("latest-session"),
+            Path("latest-stack.npy"),
+            export_path=None,
             show_viewer=False,
         )
 
