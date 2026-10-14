@@ -39,6 +39,7 @@ from phase_capture_timestamps import (
     normalize_frame_framestamp,
 )
 from phase_capture_frame_filter import should_accept_phase_frame
+from roi_geometry import build_inside_mask
 from phase_capture_storage import (
     allocate_capture_session_dir,
     generate_phase_analysis_notebook,
@@ -1811,100 +1812,13 @@ class ThorlabsCameraViewer(QObject):
     def get_current_inside_mask(self):
         if self.roi_layer is None or len(self.roi_layer.data) == 0:
             return None, None, None
-
-        roi_data = np.asarray(self.roi_layer.data[-1], dtype=float)
-        roi_type = str(self.roi_layer.shape_type[-1])
-
-        y_min = float(np.min(roi_data[:, 0]))
-        y_max = float(np.max(roi_data[:, 0]))
-        x_min = float(np.min(roi_data[:, 1]))
-        x_max = float(np.max(roi_data[:, 1]))
-
-        scale = self.display_downsample
-
-        raw_y_min = int(round(y_min * scale))
-        raw_y_max = int(round(y_max * scale))
-        raw_x_min = int(round(x_min * scale))
-        raw_x_max = int(round(x_max * scale))
-
-        raw_y_min = max(0, min(raw_y_min, self.height - 1))
-        raw_y_max = max(0, min(raw_y_max, self.height))
-        raw_x_min = max(0, min(raw_x_min, self.width - 1))
-        raw_x_max = max(0, min(raw_x_max, self.width))
-
-        if raw_y_max <= raw_y_min or raw_x_max <= raw_x_min:
-            return None, None, None
-
-        inside_mask = np.zeros((self.height, self.width), dtype=bool)
-
-        if roi_type == "rectangle":
-            inside_mask[raw_y_min:raw_y_max, raw_x_min:raw_x_max] = True
-
-            roi_info = {
-                "roi_type": "rectangle",
-                "display_coordinates": {
-                    "x_min": x_min,
-                    "x_max": x_max,
-                    "y_min": y_min,
-                    "y_max": y_max
-                },
-                "raw_coordinates": {
-                    "x_min": raw_x_min,
-                    "x_max": raw_x_max,
-                    "y_min": raw_y_min,
-                    "y_max": raw_y_max
-                },
-                "image_size": {
-                    "width": self.width,
-                    "height": self.height
-                },
-                "display_downsample": self.display_downsample
-            }
-
-        elif roi_type == "ellipse":
-            cy = (raw_y_min + raw_y_max) / 2.0
-            cx = (raw_x_min + raw_x_max) / 2.0
-            ry = (raw_y_max - raw_y_min) / 2.0
-            rx = (raw_x_max - raw_x_min) / 2.0
-
-            if rx <= 0 or ry <= 0:
-                return None, None, None
-
-            yy, xx = np.ogrid[:self.height, :self.width]
-            inside_mask = (((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2) <= 1.0
-
-            radius = (rx + ry) / 2.0
-
-            roi_info = {
-                "roi_type": "circle_or_ellipse",
-                "display_coordinates": {
-                    "x_min": x_min,
-                    "x_max": x_max,
-                    "y_min": y_min,
-                    "y_max": y_max
-                },
-                "raw_coordinates": {
-                    "center_x": cx,
-                    "center_y": cy,
-                    "radius_x": rx,
-                    "radius_y": ry,
-                    "average_radius": radius,
-                    "x_min": raw_x_min,
-                    "x_max": raw_x_max,
-                    "y_min": raw_y_min,
-                    "y_max": raw_y_max
-                },
-                "image_size": {
-                    "width": self.width,
-                    "height": self.height
-                },
-                "display_downsample": self.display_downsample
-            }
-
-        else:
-            return None, None, None
-
-        return inside_mask, roi_type, roi_info
+        return build_inside_mask(
+            roi_vertices=self.roi_layer.data[-1],
+            roi_type=str(self.roi_layer.shape_type[-1]),
+            image_height=self.height,
+            image_width=self.width,
+            display_downsample=self.display_downsample,
+        )
 
     def make_display_mask_from_raw_mask(self, raw_mask):
         if raw_mask is None:
