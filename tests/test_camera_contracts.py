@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import camera
+import phase_capture_worker
 from application_bootstrap import run_application
 import check_measured_vs_expected_phase as phase_check
 import phase_analysis_new
@@ -24,6 +25,7 @@ from phase_capture_storage import (
     PhaseSaveResult,
     allocate_capture_session_dir,
     generate_phase_analysis_notebook,
+    save_roi_snapshots,
 )
 from phase_psi import SIX_BUCKET_60_DEG
 from recalibration import (
@@ -865,6 +867,48 @@ class CameraContractTests(unittest.TestCase):
 
         self.assertFalse(results[0].save_success)
         self.assertIn("disk full", results[0].error)
+
+    def test_optional_roi_mask_write_failure_is_reported_without_blocking_params(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with patch(
+                "phase_capture_storage.np.save",
+                side_effect=OSError("mask device unavailable"),
+            ):
+                result = save_roi_snapshots(
+                    temporary_directory,
+                    np.ones((3, 4), dtype=bool),
+                    {"roi_type": "rectangle"},
+                )
+
+            self.assertIsNone(result["roi_mask_path"])
+            self.assertTrue(Path(result["roi_params_path"]).is_file())
+            self.assertEqual(len(result["warnings"]), 1)
+            self.assertIn("mask device unavailable", result["warnings"][0])
+
+    def test_png_write_failure_returns_failed_result_but_keeps_raw_stack(self):
+        frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            worker = camera.PhaseSaveWorker(
+                frames=frames,
+                save_dir=temporary_directory,
+                session_prefix="phase_capture",
+            )
+            results = []
+            worker.result_ready.connect(results.append)
+            with (
+                patch.object(camera.time, "strftime", return_value="20261014_120600"),
+                patch.object(
+                    phase_capture_worker,
+                    "save_phase_pngs",
+                    side_effect=OSError("png disk failure"),
+                ),
+            ):
+                worker.run()
+
+            result = results[0]
+            self.assertFalse(result.save_success)
+            self.assertIn("png disk failure", result.error)
+            self.assertTrue(Path(result.raw_stack_path).is_file())
 
     def test_phase_check_process_returns_success_only_with_outputs(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
