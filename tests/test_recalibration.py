@@ -1,11 +1,16 @@
+import ast
 import sys
 import unittest
 from pathlib import Path
+from types import MethodType
+
+import numpy as np
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from recalibration import (
+    is_strict_recalibration_pass,
     validate_coarse_measurement,
     validate_trigger_positions_ms,
 )
@@ -63,6 +68,72 @@ class RecalibrationValidationTests(unittest.TestCase):
             self.validate_measurement([0, 10, 20, 30, 40, 50])
         with self.assertRaisesRegex(ValueError, "excessive local backtracking"):
             self.validate_measurement([0, 60, 120, 90, 150, 250])
+
+    def test_only_all_points_within_tolerance_are_a_strict_pass(self):
+        self.assertTrue(
+            is_strict_recalibration_pass([0, 1, -2, 3, -4, 5], 5.0)
+        )
+        self.assertFalse(
+            is_strict_recalibration_pass([0, 1, -2, 3, -4, 5.01], 5.0)
+        )
+        self.assertFalse(
+            is_strict_recalibration_pass([0, 1, -2, 3, -4, float("nan")], 5.0)
+        )
+
+    def test_coarse_solver_accepts_list_returned_by_validator(self):
+        camera_path = Path(__file__).resolve().parents[1] / "src" / "camera.py"
+        camera_tree = ast.parse(camera_path.read_text(encoding="utf-8"))
+        viewer_class = next(
+            node for node in camera_tree.body
+            if isinstance(node, ast.ClassDef)
+            and node.name == "ThorlabsCameraViewer"
+        )
+        solver_node = next(
+            node for node in viewer_class.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "compute_recalibrated_trigger_positions_ms"
+        )
+        solver_module = ast.Module(body=[solver_node], type_ignores=[])
+        solver_namespace = {
+            "np": np,
+            "PHASE_CAPTURE_COUNT": 6,
+            "RECALIBRATION_EDGE_GUARD_MS": 100,
+            "RECALIBRATION_FALLING_EDGE_MS": 650,
+        }
+        exec(compile(solver_module, str(camera_path), "exec"), solver_namespace)
+
+        class FakeViewer:
+            def validate_coarse_recalibration_measurement(self, values):
+                return validate_coarse_measurement(
+                    values,
+                    frame_count=6,
+                    minimum_span_deg=220.0,
+                    minimum_total_abs_step_deg=220.0,
+                    minimum_max_step_deg=35.0,
+                    maximum_backtrack_deg=25.0,
+                )
+
+            def get_recalibration_target_phase_deg(self):
+                return np.asarray([0, 90, 180, 270, 360, 450], dtype=np.float64)
+
+            def enforce_minimum_trigger_spacing(self, positions):
+                return positions
+
+            def validate_trigger_positions_ms(self, positions):
+                return positions
+
+        solver = MethodType(
+            solver_namespace["compute_recalibrated_trigger_positions_ms"],
+            FakeViewer(),
+        )
+        result = solver(
+            coarse_positions_ms=[100, 190, 280, 369, 459, 549],
+            measured_phase_deg=[0, 102, 201, 305, 403, 535],
+        )
+
+        self.assertEqual(len(result), 6)
+        self.assertEqual(result[0], 100)
+        self.assertEqual(result, sorted(result))
 
 
 if __name__ == "__main__":

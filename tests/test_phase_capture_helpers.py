@@ -1,0 +1,76 @@
+import sys
+import unittest
+from datetime import datetime
+from pathlib import Path
+from types import SimpleNamespace
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from phase_capture_frame_filter import should_accept_phase_frame
+from phase_capture_timestamps import (
+    build_phase_timestamp_payload,
+    normalize_frame_framestamp,
+    normalize_frame_timestamp,
+)
+
+
+class PhaseCaptureFrameFilterTests(unittest.TestCase):
+    def test_rejects_missing_or_complete_capture(self):
+        self.assertFalse(should_accept_phase_frame(None, 5.0, 1.0))
+        self.assertFalse(should_accept_phase_frame(6, 5.0, 1.0))
+
+    def test_first_frame_waits_for_stale_frame_delay(self):
+        self.assertFalse(should_accept_phase_frame(0, 2.599, 1.0))
+        self.assertTrue(should_accept_phase_frame(0, 2.6, 1.0))
+
+    def test_later_frames_wait_for_grace_period(self):
+        self.assertFalse(should_accept_phase_frame(1, 1.249, 1.0))
+        self.assertTrue(should_accept_phase_frame(1, 1.25, 1.0))
+        self.assertFalse(should_accept_phase_frame(1, 0.9, 1.0))
+
+    def test_missing_mode_entry_time_accepts_incomplete_capture(self):
+        self.assertTrue(should_accept_phase_frame(3, 0.0, None))
+
+
+class PhaseCaptureTimestampTests(unittest.TestCase):
+    def test_normalizes_supported_timestamp_shapes(self):
+        self.assertEqual(normalize_frame_timestamp(12), 12.0)
+        self.assertEqual(normalize_frame_timestamp("12.5"), 12.5)
+        self.assertEqual(normalize_frame_timestamp({"camera_timestamp": "13"}), 13.0)
+        self.assertEqual(
+            normalize_frame_timestamp(SimpleNamespace(timestamp=14)),
+            14.0,
+        )
+        self.assertIsNone(normalize_frame_timestamp("not-a-time"))
+        self.assertIsNone(normalize_frame_timestamp(True))
+
+    def test_framestamp_uses_only_framestamp_field(self):
+        self.assertEqual(normalize_frame_framestamp({"framestamp": 7}), 7.0)
+        self.assertIsNone(normalize_frame_framestamp({"timestamp": 7}))
+
+    def test_payload_preserves_camera_metadata_and_host_time(self):
+        payload = build_phase_timestamp_payload(
+            {"info": {"camera_timestamp": 1234, "framestamp": 8}},
+            host_time_s=1.0,
+            phase_index=2,
+        )
+
+        self.assertEqual(payload["phase_index"], 2)
+        self.assertEqual(payload["camera_timestamp"], 1234.0)
+        self.assertEqual(payload["framestamp"], 8.0)
+        self.assertEqual(payload["host_time_s"], 1.0)
+        self.assertEqual(payload["host_time_iso"], datetime.fromtimestamp(1.0).isoformat())
+
+    def test_payload_falls_back_to_phase_slot_for_missing_framestamp(self):
+        payload = build_phase_timestamp_payload(
+            {"timestamp": "2.5"},
+            host_time_s=3.0,
+            phase_index=4,
+        )
+
+        self.assertEqual(payload["camera_timestamp"], 2.5)
+        self.assertEqual(payload["framestamp"], 5.0)
+
+
+if __name__ == "__main__":
+    unittest.main()

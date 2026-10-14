@@ -43,6 +43,7 @@ from phase_capture_timestamps import (
 )
 from phase_capture_frame_filter import should_accept_phase_frame
 from recalibration import (
+    is_strict_recalibration_pass,
     validate_coarse_measurement,
     validate_trigger_positions_ms as validate_recalibration_trigger_positions_ms,
 )
@@ -117,7 +118,6 @@ RECALIBRATION_SAFE_TRIGGER_SPACING_MS = 25
 RECALIBRATION_EDGE_GUARD_MS = 100
 RECALIBRATION_ERROR_TOLERANCE_DEG = 5.0
 RECALIBRATION_RETRY_ERROR_LIMIT_DEG = 10.0
-RECALIBRATION_MAX_MID_ERROR_POINTS = 2
 RECALIBRATION_MAX_REFINEMENT_ROUNDS = 3
 RECALIBRATION_MAX_VERIFICATION_CAPTURES = (
     RECALIBRATION_MAX_REFINEMENT_ROUNDS + 1
@@ -4016,13 +4016,17 @@ class ThorlabsCameraViewer(QObject):
         phase_times = self.phase_capture_times.copy()
         phase_frame_timestamps = []
 
-        try:
-            self.add_phase_capture_time_series_layer(
-                frames,
-                self.last_capture_algorithm_id,
-            )
-        except Exception as error:
-            print("Could not add phase stack to Napari:", error)
+        if self.recalibration_active:
+            self.pending_phase_capture_layer = None
+            print("Calibration capture: skipping Napari phase-stack layer.")
+        else:
+            try:
+                self.add_phase_capture_time_series_layer(
+                    frames,
+                    self.last_capture_algorithm_id,
+                )
+            except Exception as error:
+                print("Could not add phase stack to Napari:", error)
 
         for idx, host_time_s in enumerate(phase_times):
             if self.phase_capture_frame_timestamps[idx] is not None:
@@ -4790,7 +4794,10 @@ class ThorlabsCameraViewer(QObject):
                 f"expected {PHASE_CAPTURE_COUNT}, got {measured.shape[0]}"
             )
 
-        measured = self.validate_coarse_recalibration_measurement(measured)
+        measured = np.asarray(
+            self.validate_coarse_recalibration_measurement(measured),
+            dtype=np.float64,
+        )
 
         # Allow only tiny local backtracking from noise before interpolation.
         for index in range(1, measured.shape[0]):
@@ -5505,9 +5512,17 @@ class ThorlabsCameraViewer(QObject):
 
         if self.recalibration_stage == "coarse_capture":
             try:
+                print(
+                    "Recalibration coarse phase measurement:",
+                    measured_phase_deg.tolist(),
+                )
                 refined_positions = self.compute_recalibrated_trigger_positions_ms(
                     coarse_positions_ms=self.recalibration_coarse_positions_ms,
                     measured_phase_deg=measured_phase_deg,
+                )
+                print(
+                    "Recalibration initial refined trigger positions:",
+                    refined_positions,
                 )
 
                 self.save_recalibrated_trigger_positions(
@@ -5526,12 +5541,18 @@ class ThorlabsCameraViewer(QObject):
                 self.phase_label.setText(
                     "Phase Capture: Recalibration verification capture"
                 )
-                self.queue_or_defer_recalibration_phase_capture(
+                queue_result = self.queue_or_defer_recalibration_phase_capture(
                     refined_positions,
                     "Status: Recalibration stage 2/2 - verifying refined triggers",
                 )
+                print(
+                    "Recalibration initial verification capture:",
+                    queue_result,
+                    refined_positions,
+                )
 
             except Exception as error:
+                print("Recalibration coarse-to-verification transition failed:", error)
                 self.abort_recalibration(
                     f"Status: Recalibration solve failed: {error}"
                 )
@@ -5568,17 +5589,11 @@ class ThorlabsCameraViewer(QObject):
                 "over_10=", count_error_over_10,
             )
 
-            # Accept criteria:
-            # 1) Strict pass: all points within +/-5 deg.
-            # 2) Relaxed pass: only 1-2 points are in (5,10] deg and no point >10 deg.
-            verification_passed = (
-                (count_error_over_5 == 0)
-                or
-                (
-                    count_error_over_10 == 0
-                    and
-                    count_error_over_5 <= RECALIBRATION_MAX_MID_ERROR_POINTS
-                )
+            # Moderate-error candidates remain eligible for the final
+            # best-candidate fallback, but must not stop timing optimisation.
+            verification_passed = is_strict_recalibration_pass(
+                phase_error,
+                RECALIBRATION_ERROR_TOLERANCE_DEG,
             )
 
             if verification_passed:

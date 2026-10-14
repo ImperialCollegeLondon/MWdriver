@@ -98,6 +98,10 @@ class NativeCameraTests(unittest.TestCase):
         for index, image in enumerate(images):
             np.testing.assert_array_equal(image, np.full((2, 3), index))
             self.assertEqual(metadata[index]["framestamp"], index)
+            self.assertEqual(metadata[index]["acquisition_index"], index)
+            self.assertEqual(metadata[index]["trigger_mode"], "ext")
+            self.assertEqual(metadata[index]["camera_timestamp"], index * 1_000_000)
+            self.assertEqual(metadata[index]["acquisition_id"], metadata[0]["acquisition_id"])
         payload = build_phase_timestamp_payload(metadata[5], host_time_s=1.0, phase_index=5)
         self.assertEqual(payload["camera_timestamp"] / self.camera.get_timestamp_clock_frequency(), 0.005)
         self.assertIsNone(self.camera.get_new_images_range())

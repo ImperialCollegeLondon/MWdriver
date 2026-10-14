@@ -92,3 +92,15 @@ def validate_coarse_measurement(
         )
 
     return measured
+
+
+def is_strict_recalibration_pass(phase_error_deg, tolerance_deg):
+    try:
+        errors = [float(value) for value in phase_error_deg]
+    except (TypeError, ValueError):
+        return False
+
+    return bool(errors) and all(
+        math.isfinite(error) and abs(error) <= tolerance_deg
+        for error in errors
+    )
