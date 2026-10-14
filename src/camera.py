@@ -50,6 +50,7 @@ from phase_capture_storage import (
     save_raw_phase_stack,
     save_roi_snapshots,
 )
+from phase_capture_process import run_phase_check
 from recalibration import (
     DEFAULT_RECALIBRATION_CONFIG,
     build_even_trigger_positions_ms,
@@ -660,124 +661,34 @@ class PhaseSaveWorker(QObject):
 
         inside the same phase_capture_* folder.
         """
-        try:
-            if not os.path.exists(PHASE_CHECK_SCRIPT):
-                warning = (
-                    "Automatic phase check skipped: checker script not found: "
-                    f"{PHASE_CHECK_SCRIPT}"
-                )
-                print(warning)
-                self.status_ready.emit(warning)
-                return {
-                    "success": False,
-                    "message": warning,
-                    "return_code": None,
-                }
+        session_dir = os.path.abspath(session_dir)
+        command = [sys.executable, PHASE_CHECK_SCRIPT, session_dir]
+        print("====================================")
+        print("Starting automatic phase check")
+        print("Command:", command)
+        print("Capture folder:", session_dir)
+        print("====================================")
 
-            session_dir = os.path.abspath(session_dir)
+        self.status_ready.emit(
+            "Phase frames saved; running automatic phase check..."
+        )
+        result = run_phase_check(
+            PHASE_CHECK_SCRIPT,
+            session_dir,
+            SCRIPT_DIR,
+            PHASE_CHECK_TIMEOUT_S,
+        )
 
-            command = [
-                sys.executable,
-                PHASE_CHECK_SCRIPT,
-                session_dir,
-            ]
+        if result.stdout:
+            print("Automatic phase-check stdout:")
+            print(result.stdout)
+        if result.stderr:
+            print("Automatic phase-check stderr:")
+            print(result.stderr)
 
-            print("====================================")
-            print("Starting automatic phase check")
-            print("Command:", command)
-            print("Capture folder:", session_dir)
-            print("====================================")
-
-            self.status_ready.emit(
-                "Phase frames saved; running automatic phase check..."
-            )
-
-            completed_process = subprocess.run(
-                command,
-                cwd=SCRIPT_DIR,
-                capture_output=True,
-                text=True,
-                timeout=PHASE_CHECK_TIMEOUT_S,
-                check=False,
-            )
-
-            stdout_text = completed_process.stdout or ""
-            stderr_text = completed_process.stderr or ""
-
-            if stdout_text:
-                print("Automatic phase-check stdout:")
-                print(stdout_text)
-
-            if stderr_text:
-                print("Automatic phase-check stderr:")
-                print(stderr_text)
-
-            output_figure_path = os.path.join(
-                session_dir,
-                "measured_vs_expected_phase_annotated.png"
-            )
-            output_json_path = os.path.join(
-                session_dir,
-                "measured_phase_check.json"
-            )
-
-            success = (
-                completed_process.returncode == 0
-                and os.path.exists(output_figure_path)
-                and os.path.exists(output_json_path)
-            )
-
-            if success:
-                message = (
-                    "Automatic phase check completed: "
-                    "measured_vs_expected_phase_annotated.png and "
-                    "measured_phase_check.json saved"
-                )
-            else:
-                message = (
-                    "Automatic phase check failed or output files are missing. "
-                    f"Return code: {completed_process.returncode}"
-                )
-
-            print(message)
-            self.status_ready.emit(message)
-
-            return {
-                "success": bool(success),
-                "message": message,
-                "return_code": int(completed_process.returncode),
-                "output_figure_path": output_figure_path,
-                "output_json_path": output_json_path,
-                "stdout": stdout_text,
-                "stderr": stderr_text,
-            }
-
-        except subprocess.TimeoutExpired as error:
-            message = (
-                "Automatic phase check timed out after "
-                f"{PHASE_CHECK_TIMEOUT_S} seconds."
-            )
-            print(message)
-            self.status_ready.emit(message)
-
-            return {
-                "success": False,
-                "message": message,
-                "return_code": None,
-                "stdout": error.stdout or "",
-                "stderr": error.stderr or "",
-            }
-
-        except Exception as error:
-            message = f"Automatic phase check error: {error}"
-            print(message)
-            self.status_ready.emit(message)
-
-            return {
-                "success": False,
-                "message": message,
-                "return_code": None,
-            }
+        print(result.message)
+        self.status_ready.emit(result.message)
+        return result
 
     def save_phase_vs_voltage_plot(
         self,
@@ -968,9 +879,9 @@ class PhaseSaveWorker(QObject):
             phase_check_result = self.run_automatic_phase_check(session_dir)
 
             phase_voltage_plot_path = None
-            if phase_check_result.get("success", False):
+            if phase_check_result.success:
                 try:
-                    check_json_path = phase_check_result.get("output_json_path")
+                    check_json_path = phase_check_result.output_json_path
                     with open(check_json_path, "r", encoding="utf-8") as f:
                         check_data = json.load(f)
                     measured_phase_deg = check_data.get("measured_phase_deg")
@@ -984,7 +895,7 @@ class PhaseSaveWorker(QObject):
                     measured_phase_deg=measured_phase_deg,
                 )
 
-            if phase_check_result.get("success", False):
+            if phase_check_result.success:
                 finish_text = (
                     f"Phase capture saved and checked: "
                     f"6 frames in {session_dir}"
@@ -1000,15 +911,9 @@ class PhaseSaveWorker(QObject):
                 "session_dir": session_dir,
                 "raw_stack_path": npy_path,
                 "metadata_path": json_path,
-                "phase_check_success": bool(
-                    phase_check_result.get("success", False)
-                ),
-                "phase_check_json_path": phase_check_result.get(
-                    "output_json_path"
-                ),
-                "phase_check_figure_path": phase_check_result.get(
-                    "output_figure_path"
-                ),
+                "phase_check_success": phase_check_result.success,
+                "phase_check_json_path": phase_check_result.output_json_path,
+                "phase_check_figure_path": phase_check_result.output_figure_path,
                 "phase_voltage_plot_path": phase_voltage_plot_path,
             })
 

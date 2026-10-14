@@ -1,6 +1,7 @@
 import ast
 import json
 import sys
+import subprocess
 import tempfile
 import unittest
 import time
@@ -16,6 +17,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import camera
 import check_measured_vs_expected_phase as phase_check
+from phase_capture_process import PhaseCheckResult, run_phase_check
 from phase_capture_storage import allocate_capture_session_dir
 from phase_psi import SIX_BUCKET_60_DEG
 from recalibration import (
@@ -350,7 +352,13 @@ class CameraContractTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 (Path(session_dir) / "measured_vs_expected_phase_annotated.png").touch()
-                return {"success": True, "output_json_path": str(check_path)}
+                return PhaseCheckResult(
+                    True,
+                    "checker passed",
+                    0,
+                    str(Path(session_dir) / "measured_vs_expected_phase_annotated.png"),
+                    str(check_path),
+                )
 
             session_dirs = []
             for _ in range(2):
@@ -426,10 +434,11 @@ class CameraContractTests(unittest.TestCase):
                 save_dir=temporary_directory,
                 session_prefix="phase_calibration",
             )
-            worker.run_automatic_phase_check = lambda _session_dir: {
-                "success": False,
-                "message": "simulated checker failure",
-            }
+            worker.run_automatic_phase_check = lambda _session_dir: PhaseCheckResult(
+                False,
+                "simulated checker failure",
+                1,
+            )
             results = []
             worker.result_ready.connect(results.append)
 
@@ -458,6 +467,88 @@ class CameraContractTests(unittest.TestCase):
 
         self.assertFalse(results[0]["save_success"])
         self.assertIn("disk full", results[0]["error"])
+
+    def test_phase_check_process_returns_success_only_with_outputs(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            checker_path = Path(temporary_directory, "checker.py")
+            checker_path.touch()
+            session_dir = Path(temporary_directory, "session")
+            session_dir.mkdir()
+
+            def successful_runner(command, **kwargs):
+                self.assertEqual(command[0], "fake-python.exe")
+                self.assertEqual(command[1], str(checker_path))
+                self.assertEqual(kwargs["cwd"], temporary_directory)
+                self.assertEqual(kwargs["timeout"], 12)
+                (session_dir / "measured_vs_expected_phase_annotated.png").touch()
+                (session_dir / "measured_phase_check.json").touch()
+                return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+            result = run_phase_check(
+                str(checker_path),
+                str(session_dir),
+                temporary_directory,
+                12,
+                python_executable="fake-python.exe",
+                runner=successful_runner,
+            )
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.return_code, 0)
+        self.assertEqual(Path(result.output_json_path).name, "measured_phase_check.json")
+        self.assertEqual(result.stdout, "ok")
+
+    def test_phase_check_process_reports_nonzero_or_missing_outputs(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            checker_path = Path(temporary_directory, "checker.py")
+            checker_path.touch()
+            session_dir = Path(temporary_directory, "session")
+            session_dir.mkdir()
+            result = run_phase_check(
+                str(checker_path),
+                str(session_dir),
+                temporary_directory,
+                12,
+                runner=lambda *_args, **_kwargs: SimpleNamespace(
+                    returncode=2,
+                    stdout="partial",
+                    stderr="failure",
+                ),
+            )
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.return_code, 2)
+        self.assertIn("Return code: 2", result.message)
+
+    def test_phase_check_process_reports_missing_script_and_timeout(self):
+        missing = run_phase_check(
+            "missing_checker.py",
+            ".",
+            ".",
+            12,
+            runner=lambda *_args, **_kwargs: self.fail("Runner must not execute"),
+        )
+        self.assertFalse(missing.success)
+        self.assertIsNone(missing.return_code)
+        self.assertIn("script not found", missing.message)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            checker_path = Path(temporary_directory, "checker.py")
+            checker_path.touch()
+            timed_out = run_phase_check(
+                str(checker_path),
+                temporary_directory,
+                temporary_directory,
+                0.01,
+                runner=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                    subprocess.TimeoutExpired("checker", 0.01, output="partial")
+                ),
+            )
+
+        self.assertFalse(timed_out.success)
+        self.assertIsNone(timed_out.return_code)
+        self.assertEqual(timed_out.stdout, "partial")
+        self.assertIn("timed out", timed_out.message)
 
     def test_phase_checker_writes_expected_json_contract(self):
         timestamp = "20261014_120100"
