@@ -34,6 +34,7 @@ import napari
 from application_bootstrap import run_application
 from layer_visibility import build_layer_visibility_plan
 from stream_policy import get_camera_stream_mode
+from camera_frames import prepare_display_frame
 
 import matplotlib.pyplot as plt
 
@@ -300,15 +301,10 @@ class CameraWorker(QObject):
 
                     frame_meta = raw_frame_infos[index] if index < len(raw_frame_infos) else None
 
-                    if self.display_downsample > 1:
-                        display_frame = raw_frame[
-                            ::self.display_downsample,
-                            ::self.display_downsample
-                        ]
-                    else:
-                        display_frame = raw_frame
-
-                    display_frame = np.ascontiguousarray(display_frame)
+                    display_frame = prepare_display_frame(
+                        raw_frame,
+                        self.display_downsample,
+                    )
 
                     self.frame_ready.emit(raw_frame, display_frame, frame_meta)
 
