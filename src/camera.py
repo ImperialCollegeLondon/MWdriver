@@ -40,6 +40,7 @@ from phase_capture_timestamps import (
 )
 from phase_capture_frame_filter import should_accept_phase_frame
 from roi_geometry import build_inside_mask
+from roi_controls import create_roi_menu
 from phase_capture_storage import (
     allocate_capture_session_dir,
     generate_phase_analysis_notebook,
@@ -1600,42 +1601,22 @@ class ThorlabsCameraViewer(QObject):
         try:
             qt_window = self.viewer.window._qt_window
             menubar = qt_window.menuBar()
-
-            self.roi_menu = menubar.addMenu("ROI Tools")
-
-            self.rect_roi_action = QAction("Rect ROI", qt_window)
-            self.circle_roi_action = QAction("Circle ROI", qt_window)
-            self.mask_outside_action = QAction("Mask Outside Area", qt_window)
-            self.mask_inside_action = QAction("Mask Inside Area", qt_window)
-            self.save_roi_action = QAction("Save ROI", qt_window)
-            self.reload_roi_action = QAction("Reload ROI", qt_window)
-            self.clear_roi_action = QAction("Clear ROI", qt_window)
-
-            self.rect_roi_action.setStatusTip("Draw a rectangular ROI")
-            self.circle_roi_action.setStatusTip("Draw a circular / elliptical ROI")
-            self.mask_outside_action.setStatusTip("Keep the inside of ROI and mask the outside")
-            self.mask_inside_action.setStatusTip("Mask the inside of ROI and keep the outside")
-            self.save_roi_action.setStatusTip("Save ROI parameters and mask")
-            self.reload_roi_action.setStatusTip("Reload and display the saved ROI")
-            self.clear_roi_action.setStatusTip("Clear ROI and mask")
-
-            self.roi_menu.addAction(self.rect_roi_action)
-            self.roi_menu.addAction(self.circle_roi_action)
-            self.roi_menu.addSeparator()
-            self.roi_menu.addAction(self.mask_outside_action)
-            self.roi_menu.addAction(self.mask_inside_action)
-            self.roi_menu.addSeparator()
-            self.roi_menu.addAction(self.save_roi_action)
-            self.roi_menu.addAction(self.reload_roi_action)
-            self.roi_menu.addAction(self.clear_roi_action)
-
-            self.rect_roi_action.triggered.connect(self.start_rectangle_roi)
-            self.circle_roi_action.triggered.connect(self.start_circle_roi)
-            self.mask_outside_action.triggered.connect(self.mask_outside_area)
-            self.mask_inside_action.triggered.connect(self.mask_inside_area)
-            self.save_roi_action.triggered.connect(self.save_roi)
-            self.reload_roi_action.triggered.connect(self.reload_roi)
-            self.clear_roi_action.triggered.connect(self.clear_roi)
+            self.roi_menu, roi_actions = create_roi_menu(
+                menubar,
+                qt_window,
+                {
+                    "start_rectangle_roi": self.start_rectangle_roi,
+                    "start_circle_roi": self.start_circle_roi,
+                    "mask_outside_area": self.mask_outside_area,
+                    "mask_inside_area": self.mask_inside_area,
+                    "save_roi": self.save_roi,
+                    "reload_roi": self.reload_roi,
+                    "clear_roi": self.clear_roi,
+                },
+                QAction,
+            )
+            for attribute, action in roi_actions.items():
+                setattr(self, attribute, action)
 
             print("ROI tools added to top menu bar.")
 

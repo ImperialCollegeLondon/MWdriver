@@ -29,6 +29,7 @@ from recalibration import (
     DEFAULT_RECALIBRATION_CONFIG,
     compute_iterative_refined_positions_ms,
 )
+from roi_controls import create_roi_menu
 
 
 class LabelStub:
@@ -48,7 +49,93 @@ class FakeSerial:
         self.flushed = True
 
 
+class FakeSignal:
+    def __init__(self):
+        self.callback = None
+
+    def connect(self, callback):
+        self.callback = callback
+
+
 class CameraContractTests(unittest.TestCase):
+    def test_roi_menu_actions_preserve_order_labels_and_callbacks(self):
+        class FakeAction:
+            def __init__(self, label, parent):
+                self.label = label
+                self.parent = parent
+                self.triggered = FakeSignal()
+                self.status_tip = None
+
+            def setStatusTip(self, text):
+                self.status_tip = text
+
+        class FakeMenu:
+            def __init__(self):
+                self.items = []
+
+            def addAction(self, action):
+                self.items.append(action)
+
+            def addSeparator(self):
+                self.items.append(None)
+
+        class FakeMenuBar:
+            def __init__(self):
+                self.menu = FakeMenu()
+                self.title = None
+
+            def addMenu(self, title):
+                self.title = title
+                return self.menu
+
+        calls = []
+        callback_names = (
+            "start_rectangle_roi",
+            "start_circle_roi",
+            "mask_outside_area",
+            "mask_inside_area",
+            "save_roi",
+            "reload_roi",
+            "clear_roi",
+        )
+        callbacks = {
+            name: lambda name=name: calls.append(name)
+            for name in callback_names
+        }
+        menu_bar = FakeMenuBar()
+        parent = object()
+
+        menu, actions = create_roi_menu(menu_bar, parent, callbacks, FakeAction)
+
+        self.assertIs(menu, menu_bar.menu)
+        self.assertEqual(menu_bar.title, "ROI Tools")
+        self.assertEqual(
+            [item.label if item else None for item in menu.items],
+            [
+                "Rect ROI",
+                "Circle ROI",
+                None,
+                "Mask Outside Area",
+                "Mask Inside Area",
+                None,
+                "Save ROI",
+                "Reload ROI",
+                "Clear ROI",
+            ],
+        )
+        self.assertEqual(set(actions), {
+            "rect_roi_action",
+            "circle_roi_action",
+            "mask_outside_action",
+            "mask_inside_action",
+            "save_roi_action",
+            "reload_roi_action",
+            "clear_roi_action",
+        })
+        for action in actions.values():
+            action.triggered.callback()
+        self.assertEqual(calls, list(callback_names))
+
     def test_offline_analysis_import_is_safe_and_exposes_callable(self):
         self.assertTrue(callable(phase_analysis_new.analyze_capture))
         self.assertFalse(hasattr(phase_analysis_new, "session_dir"))
