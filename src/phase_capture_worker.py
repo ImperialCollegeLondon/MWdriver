@@ -19,7 +19,7 @@ from phase_capture_storage import (
     save_raw_phase_stack,
     save_roi_snapshots,
 )
-from phase_psi import DEFAULT_ALGORITHM
+from phase_psi import DEFAULT_ALGORITHM, get_algorithm
 from recalibration import DEFAULT_RECALIBRATION_CONFIG
 
 
@@ -158,6 +158,15 @@ class PhaseSaveWorker(QObject):
         raw_stack_path = None
         metadata_path = None
         try:
+            expected_frame_count = len(
+                get_algorithm(self.psi_algorithm_id)["expected_phase_deg"]
+            )
+            if len(self.frames) != expected_frame_count:
+                raise ValueError(
+                    f"Expected {expected_frame_count} phase frames, "
+                    f"got {len(self.frames)}."
+                )
+
             os.makedirs(self.save_dir, exist_ok=True)
             print("====================================")
             print("Phase save worker started")

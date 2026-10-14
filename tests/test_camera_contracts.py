@@ -70,6 +70,25 @@ class FakeSignal:
 
 
 class CameraContractTests(unittest.TestCase):
+    def test_phase_save_worker_rejects_wrong_frame_count_before_allocating_session(self):
+        frames = [np.ones((4, 5), dtype=np.uint16) for _ in range(5)]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            save_dir = Path(temporary_directory, "captures")
+            worker = camera.PhaseSaveWorker(
+                frames=frames,
+                save_dir=str(save_dir),
+            )
+            results = []
+            worker.result_ready.connect(results.append)
+
+            worker.run()
+
+            result = results[0]
+            self.assertFalse(result.save_success)
+            self.assertIn("Expected 6 phase frames, got 5", result.error)
+            self.assertIsNone(result.session_dir)
+            self.assertFalse(save_dir.exists())
+
     def test_controller_applies_selected_layer_visibility_plan(self):
         camera_layer = SimpleNamespace(visible=True)
         roi_layer = SimpleNamespace(visible=True)
