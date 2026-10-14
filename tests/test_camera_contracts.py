@@ -22,10 +22,8 @@ import check_measured_vs_expected_phase as phase_check
 import phase_analysis_new
 from phase_capture_process import PhaseCheckResult, run_phase_check
 from phase_capture_storage import (
-    NotebookGenerationResult,
     PhaseSaveResult,
     allocate_capture_session_dir,
-    generate_phase_analysis_notebook,
     save_roi_snapshots,
 )
 from phase_psi import SIX_BUCKET_60_DEG
@@ -558,133 +556,6 @@ class CameraContractTests(unittest.TestCase):
             )
             self.assertEqual(finished, ["manual_capture saved: 6 frames"])
             self.assertEqual(len(statuses), 7)
-
-    def test_notebook_writer_retargets_stack_and_clears_code_outputs(self):
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            template_path = Path(temporary_directory, "template.ipynb")
-            template_path.write_text(
-                json.dumps({
-                    "cells": [
-                        {"cell_type": "markdown", "source": ["# Template"]},
-                        {
-                            "cell_type": "code",
-                            "source": ["data = np.load('old_raw_stack.npy')"],
-                            "execution_count": 3,
-                            "outputs": [{"output_type": "stream", "text": ["old"]}],
-                        },
-                        {
-                            "cell_type": "code",
-                            "source": ["print('keep this code')"],
-                            "execution_count": 4,
-                            "outputs": [{"output_type": "stream", "text": ["old"]}],
-                        },
-                    ]
-                }),
-                encoding="utf-8",
-            )
-
-            result = generate_phase_analysis_notebook(
-                str(template_path),
-                temporary_directory,
-                str(Path(temporary_directory, "capture_raw_stack.npy")),
-                "20261014_120400",
-            )
-
-            self.assertTrue(result.generated)
-            self.assertEqual(Path(result.path).name, "phase_shifts_20261014_120400.ipynb")
-            generated = json.loads(Path(result.path).read_text(encoding="utf-8"))
-
-        load_cell = generated["cells"][1]
-        self.assertIn("capture_raw_stack.npy", "".join(load_cell["source"]))
-        self.assertIsNone(load_cell["execution_count"])
-        self.assertEqual(load_cell["outputs"], [])
-        self.assertEqual(generated["cells"][2]["source"], ["print('keep this code')"])
-        self.assertEqual(generated["cells"][2]["outputs"], [])
-
-    def test_notebook_writer_reports_missing_template(self):
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            result = generate_phase_analysis_notebook(
-                str(Path(temporary_directory, "missing.ipynb")),
-                temporary_directory,
-                "capture_raw_stack.npy",
-                "20261014_120401",
-            )
-
-        self.assertFalse(result.generated)
-        self.assertIsNone(result.path)
-        self.assertIn("template not found", result.message)
-
-    def test_notebook_writer_reports_serialization_failure(self):
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            template_path = Path(temporary_directory, "template.ipynb")
-            template_path.write_text(
-                json.dumps({"cells": []}),
-                encoding="utf-8",
-            )
-
-            with patch(
-                "phase_capture_storage.json.dump",
-                side_effect=OSError("notebook disk failure"),
-            ):
-                result = generate_phase_analysis_notebook(
-                    str(template_path),
-                    temporary_directory,
-                    "capture_raw_stack.npy",
-                    "20261014_120405",
-                )
-
-        self.assertFalse(result.generated)
-        self.assertIsNone(result.path)
-        self.assertIn("notebook disk failure", result.message)
-
-    def test_notebook_generation_failure_does_not_fail_capture_save(self):
-        timestamp = "20261014_120604"
-        frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
-
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            def complete_phase_check(session_dir):
-                check_path = Path(session_dir) / "measured_phase_check.json"
-                check_path.write_text(
-                    json.dumps({"measured_phase_deg": [0, 60, 120, 180, 240, 300]}),
-                    encoding="utf-8",
-                )
-                figure_path = Path(session_dir) / "measured_vs_expected_phase_annotated.png"
-                figure_path.touch()
-                return PhaseCheckResult(
-                    True,
-                    "checker passed",
-                    0,
-                    str(figure_path),
-                    str(check_path),
-                )
-
-            worker = camera.PhaseSaveWorker(
-                frames=frames,
-                save_dir=temporary_directory,
-                session_prefix="phase_capture",
-            )
-            worker.run_automatic_phase_check = complete_phase_check
-            results = []
-            worker.result_ready.connect(results.append)
-            with (
-                patch.object(camera.time, "strftime", return_value=timestamp),
-                patch.object(
-                    phase_capture_worker,
-                    "generate_phase_analysis_notebook",
-                    return_value=NotebookGenerationResult(
-                        False,
-                        None,
-                        "Create phase analysis notebook error: disk unavailable",
-                    ),
-                ),
-            ):
-                worker.run()
-
-            result = results[0]
-            self.assertTrue(result.save_success)
-            self.assertTrue(result.phase_check_success)
-            self.assertTrue(Path(result.raw_stack_path).is_file())
-            self.assertTrue(Path(result.metadata_path).is_file())
 
     @staticmethod
     def load_controller_method(method_name, namespace):

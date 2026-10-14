@@ -11,13 +11,6 @@ from phase_psi import DEFAULT_ALGORITHM, get_algorithm
 
 
 @dataclass(frozen=True)
-class NotebookGenerationResult:
-    generated: bool
-    path: str | None
-    message: str
-
-
-@dataclass(frozen=True)
 class PhaseSaveResult:
     save_success: bool
     session_dir: str | None
@@ -128,7 +121,6 @@ def save_phase_capture_metadata(
     frames,
     phase_times,
     frame_timestamps,
-    analysis_notebook_path,
     png_paths,
     roi_available,
     roi_mask_path,
@@ -145,7 +137,6 @@ def save_phase_capture_metadata(
             session_dir,
             f"{session_prefix}_{timestamp}_raw_stack.npy",
         ),
-        "analysis_notebook_path": analysis_notebook_path,
         "png_paths": list(png_paths),
         "phase_times": phase_times,
         "frame_timestamps": frame_timestamps,
@@ -188,68 +179,3 @@ def save_phase_capture_metadata(
     with open(path, "w", encoding="utf-8") as file:
         json.dump(metadata, file, indent=4)
     return path, metadata
-
-
-def generate_phase_analysis_notebook(
-    template_path,
-    session_dir,
-    npy_path,
-    timestamp,
-):
-    if not os.path.exists(template_path):
-        return NotebookGenerationResult(
-            False,
-            None,
-            f"Phase notebook template not found: {template_path}",
-        )
-
-    try:
-        with open(template_path, "r", encoding="utf-8") as file:
-            notebook = json.load(file)
-
-        npy_filename = os.path.basename(npy_path)
-        new_load_cell_source = [
-            f'with open("{npy_filename}", "rb") as f:\n',
-            "    data = np.load(f)\n",
-        ]
-        found_load_cell = False
-        for cell in notebook.get("cells", []):
-            if cell.get("cell_type") != "code":
-                continue
-
-            source = cell.get("source", "")
-            source_text = (
-                "".join(source) if isinstance(source, list) else str(source)
-            )
-            if "np.load" in source_text and "_raw_stack.npy" in source_text:
-                cell["source"] = new_load_cell_source
-                found_load_cell = True
-            cell["execution_count"] = None
-            cell["outputs"] = []
-
-        if not found_load_cell:
-            notebook.setdefault("cells", []).insert(1, {
-                "cell_type": "code",
-                "execution_count": None,
-                "metadata": {},
-                "outputs": [],
-                "source": new_load_cell_source,
-            })
-
-        output_path = os.path.join(
-            session_dir,
-            f"phase_shifts_{timestamp}.ipynb",
-        )
-        with open(output_path, "w", encoding="utf-8") as file:
-            json.dump(notebook, file, indent=1, ensure_ascii=False)
-        return NotebookGenerationResult(
-            True,
-            output_path,
-            f"Generated phase analysis notebook: {output_path}",
-        )
-    except Exception as error:
-        return NotebookGenerationResult(
-            False,
-            None,
-            f"Create phase analysis notebook error: {error}",
-        )

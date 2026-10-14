@@ -75,7 +75,6 @@ from profile_drag import get_line_drag_target
 from roi_storage import load_roi_files, save_roi_files
 from phase_capture_storage import (
     allocate_capture_session_dir,
-    generate_phase_analysis_notebook,
     PhaseSaveResult,
     save_phase_capture_metadata,
     save_phase_pngs,
@@ -124,10 +123,6 @@ MANUAL_CAPTURE_INTERVAL_MS = 150
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SAVE_DIR = os.path.join(SCRIPT_DIR, "captured_frames")
 
-# Template notebook used to generate one analysis notebook for each phase capture.
-# Put phase_shifts.ipynb in the same folder as camera.py.
-PHASE_NOTEBOOK_TEMPLATE = os.path.join(SCRIPT_DIR, "phase_shifts.ipynb")
-
 # Automatic phase-point checker.
 # After every six-frame phase capture is fully saved, camera.py launches
 # check_measured_vs_expected_phase.py for that exact session folder.
@@ -145,7 +140,6 @@ PHASE_ANALYSIS_SCRIPT = os.path.join(
 )
 
 print("Default save directory:", SAVE_DIR)
-print("Phase notebook template:", PHASE_NOTEBOOK_TEMPLATE)
 print("Phase analysis viewer:", PHASE_ANALYSIS_SCRIPT)
 
 # ============================================================

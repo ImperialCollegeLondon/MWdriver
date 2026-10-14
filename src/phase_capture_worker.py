@@ -14,7 +14,6 @@ from phase_capture_process import run_phase_check
 from phase_capture_storage import (
     PhaseSaveResult,
     allocate_capture_session_dir,
-    generate_phase_analysis_notebook,
     save_phase_capture_metadata,
     save_phase_pngs,
     save_raw_phase_stack,
@@ -26,7 +25,6 @@ from recalibration import DEFAULT_RECALIBRATION_CONFIG
 
 MODULE_DIR = Path(__file__).resolve().parent
 DEFAULT_SAVE_DIR = str(MODULE_DIR / "captured_frames")
-DEFAULT_NOTEBOOK_TEMPLATE = str(MODULE_DIR / "phase_shifts.ipynb")
 DEFAULT_PHASE_CHECK_SCRIPT = str(MODULE_DIR / "check_measured_vs_expected_phase.py")
 DEFAULT_PHASE_CHECK_TIMEOUT_S = 180
 
@@ -47,7 +45,6 @@ class PhaseSaveWorker(QObject):
         session_prefix="phase_capture",
         trigger_positions_ms=None,
         psi_algorithm_id=DEFAULT_ALGORITHM,
-        notebook_template_path=DEFAULT_NOTEBOOK_TEMPLATE,
         phase_check_script=DEFAULT_PHASE_CHECK_SCRIPT,
         phase_check_timeout_s=DEFAULT_PHASE_CHECK_TIMEOUT_S,
         voltage_mapper=None,
@@ -63,22 +60,10 @@ class PhaseSaveWorker(QObject):
         self.roi_params = roi_params
         self.save_dir = save_dir
         self.session_prefix = str(session_prefix)
-        self.notebook_template_path = notebook_template_path
         self.phase_check_script = phase_check_script
         self.phase_check_timeout_s = phase_check_timeout_s
         self.voltage_mapper = voltage_mapper
         self.recalibration_config = recalibration_config
-
-    def create_phase_analysis_notebook(self, session_dir, npy_path, timestamp):
-        result = generate_phase_analysis_notebook(
-            self.notebook_template_path,
-            session_dir,
-            npy_path,
-            timestamp,
-        )
-        print(result.message)
-        self.status_ready.emit(result.message)
-        return result.path
 
     def run_automatic_phase_check(self, session_dir):
         session_dir = os.path.abspath(session_dir)
@@ -225,11 +210,6 @@ class PhaseSaveWorker(QObject):
             print("Raw stack max:", np.max(stack))
             self.status_ready.emit(f"Saved phase raw stack: {raw_stack_path}")
 
-            notebook_path = self.create_phase_analysis_notebook(
-                session_dir,
-                raw_stack_path,
-                timestamp,
-            )
             png_records = save_phase_pngs(session_dir, timestamp, self.frames)
             png_paths = [record["path"] for record in png_records]
             for phase_index, record in enumerate(png_records):
@@ -248,7 +228,6 @@ class PhaseSaveWorker(QObject):
                 frames=self.frames,
                 phase_times=self.phase_times,
                 frame_timestamps=self.frame_timestamps,
-                analysis_notebook_path=notebook_path,
                 png_paths=png_paths,
                 roi_available=self.roi_mask is not None,
                 roi_mask_path=roi_mask_path,
