@@ -32,7 +32,10 @@ from recalibration import (
 )
 from roi_controls import create_roi_menu
 from profile_controls import create_profile_controls
-from phase_analysis_controls import create_phase_analysis_controls
+from phase_analysis_controls import (
+    build_analysis_layer_presentation,
+    create_phase_analysis_controls,
+)
 from qtpy.QtWidgets import QApplication
 
 
@@ -62,6 +65,35 @@ class FakeSignal:
 
 
 class CameraContractTests(unittest.TestCase):
+    def test_analysis_layer_presentation_selects_name_rgb_cmap_and_limits(self):
+        phase = build_analysis_layer_presentation(
+            "phase_0",
+            np.asarray([[1.0, 2.0], [3.0, 4.0]]),
+            "sample",
+            "Phase 0",
+        )
+        self.assertEqual(phase["name"], "Analysis [sample]: Phase 0")
+        self.assertFalse(phase["is_rgb"])
+        self.assertEqual(phase["colormap"], "gray")
+        self.assertEqual(phase["contrast_limits"], (1.0, 4.0))
+
+        wrapped = build_analysis_layer_presentation(
+            "wrapped", np.asarray([[-np.pi, np.pi]]), None, "Wrapped"
+        )
+        self.assertEqual(wrapped["name"], "Analysis [unknown stack]: Wrapped")
+        self.assertEqual(wrapped["colormap"], "twilight")
+
+        rgb = build_analysis_layer_presentation(
+            "zernike_plot", np.zeros((4, 5, 3)), "sample", "Zernike"
+        )
+        self.assertTrue(rgb["is_rgb"])
+        self.assertIsNone(rgb["contrast_limits"])
+
+        constant = build_analysis_layer_presentation(
+            "unwrapped", np.ones((2, 2)), "sample", "Unwrapped"
+        )
+        self.assertIsNone(constant["contrast_limits"])
+
     def test_application_bootstrap_installs_cleanup_and_runs_event_loop(self):
         class FakeEvent:
             accepted = False

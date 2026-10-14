@@ -48,7 +48,10 @@ from roi_geometry import (
 )
 from roi_controls import create_roi_menu
 from profile_controls import create_profile_controls
-from phase_analysis_controls import create_phase_analysis_controls
+from phase_analysis_controls import (
+    build_analysis_layer_presentation,
+    create_phase_analysis_controls,
+)
 from intensity_profile import sample_line_profile as sample_raw_line_profile
 from profile_drag import get_line_drag_target
 from roi_storage import load_roi_files, save_roi_files
@@ -3373,25 +3376,16 @@ class ThorlabsCameraViewer(QObject):
         result_data = self.phase_analysis_results[result_key]
         result_name = self.phase_analysis_selector.currentText()
         source_name = self.phase_analysis_source_stack_name or "unknown stack"
-        layer_name = f"Analysis [{source_name}]: {result_name}"
-        is_rgb = (
-            result_data.ndim == 3
-            and result_data.shape[-1] in (3, 4)
+        presentation = build_analysis_layer_presentation(
+            result_key,
+            result_data,
+            source_name,
+            result_name,
         )
-        colormap = "gray" if result_key.startswith("phase_") else "viridis"
-        if result_key == "wrapped":
-            colormap = "twilight"
-
-        contrast_limits = None
-        if not is_rgb:
-            finite_values = result_data[np.isfinite(result_data)]
-            if finite_values.size > 0:
-                contrast_limits = (
-                    float(np.min(finite_values)),
-                    float(np.max(finite_values)),
-                )
-                if contrast_limits[0] == contrast_limits[1]:
-                    contrast_limits = None
+        layer_name = presentation["name"]
+        is_rgb = presentation["is_rgb"]
+        colormap = presentation["colormap"]
+        contrast_limits = presentation["contrast_limits"]
 
         current_record = next(
             (
