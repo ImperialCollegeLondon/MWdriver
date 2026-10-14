@@ -19,6 +19,7 @@ from phase_psi import (
     reconstruct_phase,
 )
 from phase_unwrap import unwrap_phase_from_center
+from phase_fourier import detect_fourier_carrier
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -285,44 +286,14 @@ def analyze_capture(
     # ---------------------------------------------------------------------
     # Detect the first-order Fourier carrier peak in frame 0
     # ---------------------------------------------------------------------
-    fourier_spectrum = np.abs(np.fft.fftshift(np.fft.fft2(data[0])))
-    fourier_cy = sizey // 2
-    fourier_cx = sizex // 2
-    fourier_yy, fourier_xx = np.ogrid[:sizey, :sizex]
-
-    dc_radius = 35
-    lower_half_margin = 10
-    refine_radius = 45
-    dc_region = (
-        (fourier_yy - fourier_cy) ** 2
-        + (fourier_xx - fourier_cx) ** 2
-    ) <= dc_radius ** 2
-
-    search_spectrum = fourier_spectrum.copy()
-    search_spectrum[dc_region] = 0
-    search_spectrum[:fourier_cy + lower_half_margin, :] = 0
-    coarse_peak_y, coarse_peak_x = np.unravel_index(
-        np.argmax(search_spectrum),
-        search_spectrum.shape,
-    )
-
-    refine_window = (
-        (fourier_yy - coarse_peak_y) ** 2
-        + (fourier_xx - coarse_peak_x) ** 2
-    ) <= refine_radius ** 2
-    refine_spectrum = fourier_spectrum.copy()
-    refine_spectrum[~refine_window] = 0
-    refine_spectrum[dc_region] = 0
-    fourier_peak_y, fourier_peak_x = np.unravel_index(
-        np.argmax(refine_spectrum),
-        refine_spectrum.shape,
-    )
-
-    fourier_peak_distance = float(np.hypot(
-        fourier_peak_y - fourier_cy,
-        fourier_peak_x - fourier_cx,
-    ))
-    fourier_mask_radius = int(np.clip(0.35 * fourier_peak_distance, 6, 30))
+    fourier_carrier = detect_fourier_carrier(data[0])
+    fourier_spectrum = fourier_carrier.spectrum
+    fourier_cy = fourier_carrier.center_y
+    fourier_cx = fourier_carrier.center_x
+    fourier_peak_y = fourier_carrier.peak_y
+    fourier_peak_x = fourier_carrier.peak_x
+    fourier_peak_distance = fourier_carrier.peak_distance
+    fourier_mask_radius = fourier_carrier.mask_radius
 
     print(
         "Detected first-order Fourier peak: "
