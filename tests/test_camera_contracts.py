@@ -998,6 +998,49 @@ class CameraContractTests(unittest.TestCase):
             self.assertFalse(results[0].phase_check_success)
             self.assertTrue(Path(results[0].raw_stack_path).is_file())
 
+    def test_optional_voltage_plot_failure_does_not_fail_capture_save(self):
+        timestamp = "20261014_120602"
+        frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            def complete_phase_check(session_dir):
+                check_path = Path(session_dir) / "measured_phase_check.json"
+                check_path.write_text(
+                    json.dumps({"measured_phase_deg": [0, 60, 120, 180, 240, 300]}),
+                    encoding="utf-8",
+                )
+                figure_path = Path(session_dir) / "measured_vs_expected_phase_annotated.png"
+                figure_path.touch()
+                return PhaseCheckResult(
+                    True,
+                    "checker passed",
+                    0,
+                    str(figure_path),
+                    str(check_path),
+                )
+
+            worker = camera.PhaseSaveWorker(
+                frames=frames,
+                save_dir=temporary_directory,
+                session_prefix="phase_capture",
+                trigger_positions_ms=[100, 190, 280, 370, 460, 550],
+                voltage_mapper=lambda _position: (_ for _ in ()).throw(
+                    OSError("plot device unavailable")
+                ),
+            )
+            worker.run_automatic_phase_check = complete_phase_check
+            results = []
+            worker.result_ready.connect(results.append)
+
+            with patch.object(camera.time, "strftime", return_value=timestamp):
+                worker.run()
+            result = results[0]
+            self.assertTrue(result.save_success)
+            self.assertTrue(result.phase_check_success)
+            self.assertIsNone(result.phase_voltage_plot_path)
+            self.assertTrue(Path(result.raw_stack_path).is_file())
+            self.assertTrue(Path(result.metadata_path).is_file())
+
     def test_phase_save_worker_reports_storage_failure(self):
         frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
         with tempfile.TemporaryDirectory() as temporary_directory:
