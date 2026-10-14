@@ -2,7 +2,6 @@ import sys
 import time
 import os
 import json
-import queue
 import copy
 import subprocess
 import ast
@@ -28,7 +27,6 @@ from qtpy.QtWidgets import (
 )
 
 import numpy as np
-import serial
 import imageio.v2 as imageio
 
 from thorlabs_native_camera import NativeThorlabsCamera
@@ -53,6 +51,7 @@ from phase_capture_storage import (
     save_roi_snapshots,
 )
 from phase_capture_process import run_phase_check
+from pico_serial_worker import PicoSerialWorker
 from recalibration import (
     DEFAULT_RECALIBRATION_CONFIG,
     build_even_trigger_positions_ms,
@@ -305,162 +304,6 @@ class CameraWorker(QObject):
 
     def stop(self):
         self.running = False
-
-
-class PicoSerialWorker(QObject):
-    phase_session_started = Signal()
-    phase_requested = Signal(int)
-    phase_session_done = Signal()
-
-    capture_requested = Signal()
-
-    status_ready = Signal(str)
-    message_ready = Signal(str)
-
-    def __init__(self, port="COM3", baudrate=115200, reboot_pico=True):
-        super().__init__()
-
-        self.port = port
-        self.baudrate = baudrate
-        self.reboot_pico = reboot_pico
-
-        self.running = False
-        self.ser = None
-
-        # Commands from GUI button to Pico.
-        # Serial writes are performed inside run(), in this worker thread.
-        self.command_queue = queue.Queue()
-
-    def request_start_phase_from_gui(self):
-        """
-        Called by the GUI thread when the Start Phase Capture menu action is clicked.
-        It only queues the command; the actual serial write is done in run().
-        """
-        try:
-            self.command_queue.put("PC_START_PHASE")
-            self.message_ready.emit("Queued command to Pico: PC_START_PHASE")
-        except Exception as e:
-            self.message_ready.emit(f"Queue Pico command error: {e}")
-
-    def request_set_trigger_positions_ms(self, trigger_positions_ms):
-        """
-        Queue one serial command that updates Pico falling-edge trigger times.
-        """
-        try:
-            serialized = ",".join(
-                str(int(round(value)))
-                for value in trigger_positions_ms
-            )
-
-            cmd = f"SET_TRIGGER_POSITIONS_MS:{serialized}"
-            self.command_queue.put(cmd)
-            self.message_ready.emit(
-                f"Queued trigger positions to Pico: {serialized}"
-            )
-        except Exception as e:
-            self.message_ready.emit(
-                f"Queue trigger positions command error: {e}"
-            )
-
-    def process_pending_commands(self):
-        """
-        Send queued GUI commands to Pico through the already-open serial port.
-        This is called inside the Pico serial worker loop.
-        """
-        if self.ser is None:
-            return
-
-        while True:
-            try:
-                cmd = self.command_queue.get_nowait()
-            except queue.Empty:
-                break
-
-            try:
-                line = (cmd + "\n").encode("utf-8")
-                self.ser.write(line)
-                self.ser.flush()
-                self.message_ready.emit(f"Sent to Pico: {cmd}")
-            except Exception as e:
-                self.message_ready.emit(f"Pico command send error: {e}")
-
-    def handle_serial_line(self, line):
-        if line == "TRIANGLE_START":
-            self.phase_session_started.emit()
-        elif line.startswith("CAPTURE_PHASE_"):
-            try:
-                phase_index = int(line.split("_")[-1])
-
-                if 0 <= phase_index < PHASE_CAPTURE_COUNT:
-                    self.phase_requested.emit(phase_index)
-                else:
-                    self.message_ready.emit(
-                        f"Pico phase index out of range: {phase_index}"
-                    )
-            except Exception as error:
-                self.message_ready.emit(f"Pico phase parse error: {error}")
-        elif line == "TRIANGLE_DONE":
-            self.phase_session_done.emit()
-        elif line == "START_CAPTURE":
-            self.capture_requested.emit()
-
-    def run(self):
-        self.running = True
-
-        try:
-            self.status_ready.emit(f"Pico: Opening {self.port}...")
-
-            with serial.Serial(self.port, self.baudrate, timeout=0.2) as ser:
-                self.ser = ser
-
-                self.status_ready.emit(f"Pico: Connected on {self.port}")
-
-                if self.reboot_pico:
-                    self.message_ready.emit("Pico: soft reboot...")
-                    try:
-                        ser.write(b"\x03")
-                        time.sleep(0.3)
-                        ser.write(b"\x04")
-                        time.sleep(2.0)
-                    except Exception as e:
-                        self.message_ready.emit(f"Pico reboot warning: {e}")
-
-                start_time = time.time()
-                while time.time() - start_time < 2.0 and self.running:
-                    line = ser.readline().decode(errors="ignore").strip()
-                    if line:
-                        self.message_ready.emit(f"Pico startup: {line}")
-
-                self.status_ready.emit("Pico: Ready - use Start Phase Capture button")
-
-                while self.running:
-                    # First send any GUI command to Pico.
-                    self.process_pending_commands()
-
-                    line = ser.readline().decode(errors="ignore").strip()
-
-                    if not line:
-                        continue
-
-                    self.message_ready.emit(f"Pico says: {line}")
-                    self.handle_serial_line(line)
-
-        except Exception as e:
-            self.status_ready.emit(f"Pico: Error - {e}")
-            self.message_ready.emit(f"Pico listener error: {e}")
-
-        finally:
-            self.ser = None
-            self.status_ready.emit("Pico: Disconnected")
-
-    def stop(self):
-        self.running = False
-
-        try:
-            if self.ser is not None:
-                self.ser.close()
-        except Exception:
-            pass
 
 
 class FrameSaveWorker(QObject):
