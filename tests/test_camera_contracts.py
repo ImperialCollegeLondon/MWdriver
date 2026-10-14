@@ -614,6 +614,29 @@ class CameraContractTests(unittest.TestCase):
         self.assertIsNone(result.path)
         self.assertIn("template not found", result.message)
 
+    def test_notebook_writer_reports_serialization_failure(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            template_path = Path(temporary_directory, "template.ipynb")
+            template_path.write_text(
+                json.dumps({"cells": []}),
+                encoding="utf-8",
+            )
+
+            with patch(
+                "phase_capture_storage.json.dump",
+                side_effect=OSError("notebook disk failure"),
+            ):
+                result = generate_phase_analysis_notebook(
+                    str(template_path),
+                    temporary_directory,
+                    "capture_raw_stack.npy",
+                    "20261014_120405",
+                )
+
+        self.assertFalse(result.generated)
+        self.assertIsNone(result.path)
+        self.assertIn("notebook disk failure", result.message)
+
     def test_notebook_generation_failure_does_not_fail_capture_save(self):
         timestamp = "20261014_120604"
         frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
