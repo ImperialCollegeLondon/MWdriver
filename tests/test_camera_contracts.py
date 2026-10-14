@@ -15,7 +15,10 @@ sys.path.insert(0, str(ROOT / "src"))
 import camera
 import check_measured_vs_expected_phase as phase_check
 from phase_psi import SIX_BUCKET_60_DEG
-from recalibration import compute_iterative_refined_positions_ms
+from recalibration import (
+    DEFAULT_RECALIBRATION_CONFIG,
+    compute_iterative_refined_positions_ms,
+)
 
 
 class LabelStub:
@@ -55,11 +58,8 @@ class CameraContractTests(unittest.TestCase):
             "np": np,
             "os": __import__("os"),
             "json": json,
+            "RECALIBRATION_CONFIG": camera.RECALIBRATION_CONFIG,
             "is_strict_recalibration_pass": camera.is_strict_recalibration_pass,
-            "RECALIBRATION_ERROR_TOLERANCE_DEG": 5.0,
-            "RECALIBRATION_MAX_REFINEMENT_ROUNDS": 3,
-            "RECALIBRATION_MAX_VERIFICATION_CAPTURES": 4,
-            "RECALIBRATION_MAX_INCOMPLETE_VERIFICATION_RETRIES": 2,
         }
         exec(compile(handler_module, str(camera_path), "exec"), handler_namespace)
         return handler_namespace["on_phase_save_result"]
@@ -282,23 +282,15 @@ class CameraContractTests(unittest.TestCase):
             current_positions,
             measured_phase,
             [0, 90, 180, 270, 360, 450],
-            frame_count=6,
-            falling_edge_ms=650,
-            edge_guard_ms=100,
-            minimum_spacing_ms=25,
-            validation_spacing_ms=6,
-            retry_error_limit_deg=10.0,
-            regular_damping=0.7,
-            regular_max_time_step_ms=20.0,
-            large_error_damping=1.0,
-            large_error_max_time_step_ms=40.0,
+            config=DEFAULT_RECALIBRATION_CONFIG,
+            camera_required_spacing_ms=44,
         )
 
         self.assertNotEqual(refined, current_positions)
         self.assertEqual(refined[0], current_positions[0])
         self.assertEqual(refined, sorted(refined))
         self.assertTrue(all(
-            abs(new - old) <= 40.0
+            abs(new - old) <= DEFAULT_RECALIBRATION_CONFIG.large_error_time_step_ms
             for old, new in zip(current_positions, refined)
         ))
 

@@ -8,6 +8,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from recalibration import (
+    DEFAULT_RECALIBRATION_CONFIG,
+    RecalibrationConfig,
     build_even_trigger_positions_ms,
     compute_coarse_refined_positions_ms,
     enforce_minimum_trigger_spacing_ms,
@@ -20,28 +22,38 @@ from recalibration import (
 
 
 class RecalibrationValidationTests(unittest.TestCase):
+    def test_config_derives_verification_limit_from_refinement_rounds(self):
+        config = RecalibrationConfig(max_refinement_rounds=5)
+        self.assertEqual(config.max_verification_captures, 6)
+        self.assertEqual(DEFAULT_RECALIBRATION_CONFIG.frame_count, 6)
+
     def test_even_trigger_positions_respect_guard_bounds(self):
         self.assertEqual(
-            build_even_trigger_positions_ms(6, 100, 549),
+            build_even_trigger_positions_ms(DEFAULT_RECALIBRATION_CONFIG),
             [100, 190, 280, 369, 459, 549],
         )
 
     def test_spacing_enforcement_respects_camera_minimum_and_bounds(self):
         positions = enforce_minimum_trigger_spacing_ms(
             [100, 110, 120, 130, 140, 150],
-            frame_count=6,
-            minimum_spacing_ms=25,
-            lower_bound_ms=100,
-            upper_bound_ms=549,
+            config=DEFAULT_RECALIBRATION_CONFIG,
+            camera_required_spacing_ms=25,
         )
         self.assertEqual(positions, [100, 125, 150, 175, 200, 225])
+        camera_limited_positions = enforce_minimum_trigger_spacing_ms(
+            [100, 110, 120, 130, 140, 150],
+            config=DEFAULT_RECALIBRATION_CONFIG,
+            camera_required_spacing_ms=44,
+        )
+        self.assertEqual(
+            np.diff(camera_limited_positions).tolist(),
+            [44, 44, 44, 44, 44],
+        )
         with self.assertRaisesRegex(ValueError, "need 500 ms"):
             enforce_minimum_trigger_spacing_ms(
                 [100, 110, 120, 130, 140, 150],
-                frame_count=6,
-                minimum_spacing_ms=100,
-                lower_bound_ms=100,
-                upper_bound_ms=549,
+                config=DEFAULT_RECALIBRATION_CONFIG,
+                camera_required_spacing_ms=100,
             )
 
     def test_candidate_scoring_normalises_to_first_frame_and_orders_score(self):
@@ -50,8 +62,7 @@ class RecalibrationValidationTests(unittest.TestCase):
             measured_phase_deg=[15, 107, 203, 307, 410, 515],
             target_phase_deg=[0, 90, 180, 270, 360, 450],
             trigger_positions_ms=[100, 190, 280, 370, 460, 550],
-            tolerance_deg=5.0,
-            retry_error_limit_deg=10.0,
+            config=DEFAULT_RECALIBRATION_CONFIG,
         )
 
         self.assertEqual(candidate["phase_error_deg"], [0, 2, 8, 22, 35, 50])
@@ -62,37 +73,36 @@ class RecalibrationValidationTests(unittest.TestCase):
     def test_auto_restart_thresholds(self):
         self.assertTrue(
             should_auto_restart_recalibration(
-                {"count_error_over_5": 2, "count_error_over_10": 1}, 2, 3
+                {"count_error_over_5": 2, "count_error_over_10": 1},
+                DEFAULT_RECALIBRATION_CONFIG,
             )
         )
         self.assertTrue(
             should_auto_restart_recalibration(
-                {"count_error_over_5": 3, "count_error_over_10": 0}, 2, 3
+                {"count_error_over_5": 3, "count_error_over_10": 0},
+                DEFAULT_RECALIBRATION_CONFIG,
             )
         )
         self.assertFalse(
             should_auto_restart_recalibration(
-                {"count_error_over_5": 2, "count_error_over_10": 0}, 2, 3
+                {"count_error_over_5": 2, "count_error_over_10": 0},
+                DEFAULT_RECALIBRATION_CONFIG,
             )
         )
-        self.assertFalse(should_auto_restart_recalibration(None, 2, 3))
+        self.assertFalse(
+            should_auto_restart_recalibration(None, DEFAULT_RECALIBRATION_CONFIG)
+        )
 
     def validate_positions(self, positions):
         return validate_trigger_positions_ms(
             positions,
-            frame_count=6,
-            falling_edge_ms=650,
-            minimum_spacing_ms=6,
+            DEFAULT_RECALIBRATION_CONFIG,
         )
 
     def validate_measurement(self, values):
         return validate_coarse_measurement(
             values,
-            frame_count=6,
-            minimum_span_deg=220.0,
-            minimum_total_abs_step_deg=220.0,
-            minimum_max_step_deg=35.0,
-            maximum_backtrack_deg=25.0,
+            DEFAULT_RECALIBRATION_CONFIG,
         )
 
     def test_trigger_positions_are_rounded_and_returned_as_integers(self):
@@ -131,13 +141,19 @@ class RecalibrationValidationTests(unittest.TestCase):
 
     def test_only_all_points_within_tolerance_are_a_strict_pass(self):
         self.assertTrue(
-            is_strict_recalibration_pass([0, 1, -2, 3, -4, 5], 5.0)
+            is_strict_recalibration_pass(
+                [0, 1, -2, 3, -4, 5], DEFAULT_RECALIBRATION_CONFIG
+            )
         )
         self.assertFalse(
-            is_strict_recalibration_pass([0, 1, -2, 3, -4, 5.01], 5.0)
+            is_strict_recalibration_pass(
+                [0, 1, -2, 3, -4, 5.01], DEFAULT_RECALIBRATION_CONFIG
+            )
         )
         self.assertFalse(
-            is_strict_recalibration_pass([0, 1, -2, 3, -4, float("nan")], 5.0)
+            is_strict_recalibration_pass(
+                [0, 1, -2, 3, -4, float("nan")], DEFAULT_RECALIBRATION_CONFIG
+            )
         )
 
     def test_coarse_solver_accepts_list_returned_by_validation(self):
@@ -145,15 +161,8 @@ class RecalibrationValidationTests(unittest.TestCase):
             coarse_positions_ms=[100, 190, 280, 369, 459, 549],
             measured_phase_deg=[0, 102, 201, 305, 403, 535],
             target_phase_deg=[0, 90, 180, 270, 360, 450],
-            frame_count=6,
-            falling_edge_ms=650,
-            edge_guard_ms=100,
-            minimum_spacing_ms=25,
-            validation_spacing_ms=6,
-            minimum_span_deg=220.0,
-            minimum_total_abs_step_deg=220.0,
-            minimum_max_step_deg=35.0,
-            maximum_backtrack_deg=25.0,
+            config=DEFAULT_RECALIBRATION_CONFIG,
+            camera_required_spacing_ms=25,
         )
 
         self.assertEqual(len(result), 6)

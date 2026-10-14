@@ -43,6 +43,7 @@ from phase_capture_timestamps import (
 )
 from phase_capture_frame_filter import should_accept_phase_frame
 from recalibration import (
+    DEFAULT_RECALIBRATION_CONFIG,
     build_even_trigger_positions_ms,
     compute_coarse_refined_positions_ms,
     compute_iterative_refined_positions_ms as compute_iterative_refined_positions,
@@ -68,7 +69,7 @@ from phase_psi import (
 PICO_PORT = "COM4"
 PICO_BAUDRATE = 115200
 
-PHASE_CAPTURE_COUNT = 6
+PHASE_CAPTURE_COUNT = DEFAULT_RECALIBRATION_CONFIG.frame_count
 
 MANUAL_CAPTURE_COUNT = 6
 MANUAL_CAPTURE_INTERVAL_MS = 150
@@ -111,47 +112,15 @@ EXTERNAL_TRIGGER_EDGE = "rise"
 STANDARD_PHASE_EXPOSURE_MS = {60.0: 20.0, 90.0: 30.0}
 
 # Recalibration parameters.
-RECALIBRATION_FALLING_EDGE_MS = 650
+RECALIBRATION_CONFIG = DEFAULT_RECALIBRATION_CONFIG
 RECALIBRATION_TRIGGER_JSON_PATH = os.path.join(
     SCRIPT_DIR,
     "phase_trigger_positions.json"
 )
-RECALIBRATION_MIN_TRIGGER_SPACING_MS = 6
-# Two triggers this close together can overlap camera exposure/readout,
-# causing repeatable dropped frames even on retry with identical positions.
-# Computed positions are actively spread apart to at least this spacing.
-RECALIBRATION_SAFE_TRIGGER_SPACING_MS = 25
-RECALIBRATION_EDGE_GUARD_MS = 100
-RECALIBRATION_ERROR_TOLERANCE_DEG = 5.0
-RECALIBRATION_RETRY_ERROR_LIMIT_DEG = 10.0
-RECALIBRATION_MAX_REFINEMENT_ROUNDS = 3
-RECALIBRATION_MAX_VERIFICATION_CAPTURES = (
-    RECALIBRATION_MAX_REFINEMENT_ROUNDS + 1
-)
-RECALIBRATION_MAX_INCOMPLETE_VERIFICATION_RETRIES = 2
-# Auto-restart when the best of four still has at least one >10 deg point
-# and at least one additional point outside +/-5 deg.
-RECALIBRATION_AUTO_RESTART_MIN_ERROR_OVER_5_POINTS = 2
-# Auto-restart even with zero >10 deg points, once too many points miss
-# the +/-5 deg band on their own.
-RECALIBRATION_AUTO_RESTART_MIN_ERROR_OVER_5_ONLY_POINTS = 3
-RECALIBRATION_MAX_AUTO_RESTARTS = 1
-RECALIBRATION_MAX_TIME_STEP_MS = 20.0
-RECALIBRATION_TIME_UPDATE_DAMPING = 0.7
-RECALIBRATION_LARGE_ERROR_TIME_STEP_MS = 40.0
-RECALIBRATION_LARGE_ERROR_DAMPING = 1.0
 RECALIBRATION_TRIGGER_UPDATE_ACK_TIMEOUT_S = 1.5
 
-# Coarse-capture quality gates.
-# Recalibration is aborted when the six-point phase curve has too little
-# useful span/step, because inversion from that data collapses trigger points.
-RECALIBRATION_MIN_COARSE_SPAN_DEG = 220.0
-RECALIBRATION_MIN_COARSE_TOTAL_ABS_STEP_DEG = 220.0
-RECALIBRATION_MIN_COARSE_MAX_STEP_DEG = 35.0
-RECALIBRATION_MAX_COARSE_BACKTRACK_DEG = 25.0
-
 # Pico drives GP15 with PWM at logic-level amplitude; the falling edge duty
-# ramps linearly from MAX_DUTY down to 0 across RECALIBRATION_FALLING_EDGE_MS,
+# ramps linearly from MAX_DUTY down to 0 across the configured falling edge,
 # mirroring build_falling_duty_table() in main.py on the Pico.
 TRIANGLE_WAVE_SUPPLY_VOLTAGE = 3.3
 
@@ -165,7 +134,8 @@ def triangle_wave_falling_edge_voltage(trigger_position_ms):
     was present when the frame was triggered.
     """
     fraction = 1.0 - (
-        (float(trigger_position_ms) + 1.0) / float(RECALIBRATION_FALLING_EDGE_MS)
+        (float(trigger_position_ms) + 1.0)
+        / float(RECALIBRATION_CONFIG.falling_edge_ms)
     )
     fraction = max(0.0, min(1.0, fraction))
     return TRIANGLE_WAVE_SUPPLY_VOLTAGE * fraction
@@ -3964,7 +3934,7 @@ class ThorlabsCameraViewer(QObject):
             if (
                 self.recalibration_stage == "verification_capture"
                 and self.recalibration_incomplete_verification_retries
-                < RECALIBRATION_MAX_INCOMPLETE_VERIFICATION_RETRIES
+                < RECALIBRATION_CONFIG.max_incomplete_verification_retries
             ):
                 self.recalibration_incomplete_verification_retries += 1
                 retry_verification_capture = True
@@ -4689,22 +4659,14 @@ class ThorlabsCameraViewer(QObject):
         missing-frame risk.
         """
         positions = build_even_trigger_positions_ms(
-            frame_count=PHASE_CAPTURE_COUNT,
-            lower_bound_ms=RECALIBRATION_EDGE_GUARD_MS,
-            upper_bound_ms=(
-                RECALIBRATION_FALLING_EDGE_MS
-                - 1
-                - RECALIBRATION_EDGE_GUARD_MS
-            ),
+            RECALIBRATION_CONFIG,
         )
         return self.validate_trigger_positions_ms(positions)
 
     def validate_trigger_positions_ms(self, trigger_positions_ms):
         return validate_recalibration_trigger_positions_ms(
             trigger_positions_ms,
-            frame_count=PHASE_CAPTURE_COUNT,
-            falling_edge_ms=RECALIBRATION_FALLING_EDGE_MS,
-            minimum_spacing_ms=RECALIBRATION_MIN_TRIGGER_SPACING_MS,
+            RECALIBRATION_CONFIG,
         )
 
     def enforce_minimum_trigger_spacing(
@@ -4722,22 +4684,14 @@ class ThorlabsCameraViewer(QObject):
         than random jitter, so it repeats even on identical retries.
         """
         if min_spacing_ms is None:
-            min_spacing_ms = RECALIBRATION_SAFE_TRIGGER_SPACING_MS
-        minimum_spacing_ms = max(
-            min_spacing_ms,
-            self.cam.get_recommended_trigger_spacing_ms(exposure_s=self.exposure_s),
-        )
-        lower_bound_ms = float(RECALIBRATION_EDGE_GUARD_MS)
-        upper_bound_ms = float(
-            RECALIBRATION_FALLING_EDGE_MS - 1 - RECALIBRATION_EDGE_GUARD_MS
-        )
-
+            min_spacing_ms = RECALIBRATION_CONFIG.safe_trigger_spacing_ms
         return enforce_minimum_trigger_spacing_ms(
             trigger_positions_ms,
-            frame_count=PHASE_CAPTURE_COUNT,
-            minimum_spacing_ms=minimum_spacing_ms,
-            lower_bound_ms=lower_bound_ms,
-            upper_bound_ms=upper_bound_ms,
+            config=RECALIBRATION_CONFIG,
+            camera_required_spacing_ms=self.cam.get_recommended_trigger_spacing_ms(
+                exposure_s=self.exposure_s
+            ),
+            requested_spacing_ms=min_spacing_ms,
         )
 
     def compute_recalibrated_trigger_positions_ms(
@@ -4745,35 +4699,20 @@ class ThorlabsCameraViewer(QObject):
         coarse_positions_ms,
         measured_phase_deg,
     ):
-        minimum_spacing_ms = max(
-            RECALIBRATION_SAFE_TRIGGER_SPACING_MS,
-            self.cam.get_recommended_trigger_spacing_ms(exposure_s=self.exposure_s),
-        )
         return compute_coarse_refined_positions_ms(
             coarse_positions_ms,
             measured_phase_deg,
             self.get_recalibration_target_phase_deg(),
-            frame_count=PHASE_CAPTURE_COUNT,
-            falling_edge_ms=RECALIBRATION_FALLING_EDGE_MS,
-            edge_guard_ms=RECALIBRATION_EDGE_GUARD_MS,
-            minimum_spacing_ms=minimum_spacing_ms,
-            validation_spacing_ms=RECALIBRATION_MIN_TRIGGER_SPACING_MS,
-            minimum_span_deg=RECALIBRATION_MIN_COARSE_SPAN_DEG,
-            minimum_total_abs_step_deg=RECALIBRATION_MIN_COARSE_TOTAL_ABS_STEP_DEG,
-            minimum_max_step_deg=RECALIBRATION_MIN_COARSE_MAX_STEP_DEG,
-            maximum_backtrack_deg=RECALIBRATION_MAX_COARSE_BACKTRACK_DEG,
+            config=RECALIBRATION_CONFIG,
+            camera_required_spacing_ms=self.cam.get_recommended_trigger_spacing_ms(
+                exposure_s=self.exposure_s
+            ),
         )
 
     def validate_coarse_recalibration_measurement(self, measured_phase_deg):
         return validate_coarse_measurement(
             measured_phase_deg,
-            frame_count=PHASE_CAPTURE_COUNT,
-            minimum_span_deg=RECALIBRATION_MIN_COARSE_SPAN_DEG,
-            minimum_total_abs_step_deg=(
-                RECALIBRATION_MIN_COARSE_TOTAL_ABS_STEP_DEG
-            ),
-            minimum_max_step_deg=RECALIBRATION_MIN_COARSE_MAX_STEP_DEG,
-            maximum_backtrack_deg=RECALIBRATION_MAX_COARSE_BACKTRACK_DEG,
+            RECALIBRATION_CONFIG,
         )
 
     def save_recalibrated_trigger_positions(
@@ -4942,24 +4881,14 @@ class ThorlabsCameraViewer(QObject):
         current_positions_ms,
         measured_phase_deg,
     ):
-        minimum_spacing_ms = max(
-            RECALIBRATION_SAFE_TRIGGER_SPACING_MS,
-            self.cam.get_recommended_trigger_spacing_ms(exposure_s=self.exposure_s),
-        )
         return compute_iterative_refined_positions(
             current_positions_ms,
             measured_phase_deg,
             self.get_recalibration_target_phase_deg(),
-            frame_count=PHASE_CAPTURE_COUNT,
-            falling_edge_ms=RECALIBRATION_FALLING_EDGE_MS,
-            edge_guard_ms=RECALIBRATION_EDGE_GUARD_MS,
-            minimum_spacing_ms=minimum_spacing_ms,
-            validation_spacing_ms=RECALIBRATION_MIN_TRIGGER_SPACING_MS,
-            retry_error_limit_deg=RECALIBRATION_RETRY_ERROR_LIMIT_DEG,
-            regular_damping=RECALIBRATION_TIME_UPDATE_DAMPING,
-            regular_max_time_step_ms=RECALIBRATION_MAX_TIME_STEP_MS,
-            large_error_damping=RECALIBRATION_LARGE_ERROR_DAMPING,
-            large_error_max_time_step_ms=RECALIBRATION_LARGE_ERROR_TIME_STEP_MS,
+            config=RECALIBRATION_CONFIG,
+            camera_required_spacing_ms=self.cam.get_recommended_trigger_spacing_ms(
+                exposure_s=self.exposure_s
+            ),
         )
 
     def abort_recalibration(self, status_text):
@@ -4983,12 +4912,7 @@ class ThorlabsCameraViewer(QObject):
     def should_auto_restart_recalibration(self, best_candidate):
         return should_auto_restart_candidate(
             best_candidate,
-            minimum_error_over_5_points=(
-                RECALIBRATION_AUTO_RESTART_MIN_ERROR_OVER_5_POINTS
-            ),
-            minimum_error_over_5_only_points=(
-                RECALIBRATION_AUTO_RESTART_MIN_ERROR_OVER_5_ONLY_POINTS
-            ),
+            RECALIBRATION_CONFIG,
         )
 
     def purge_current_recalibration_session_artifacts(self):
@@ -5020,7 +4944,7 @@ class ThorlabsCameraViewer(QObject):
                 )
 
     def restart_recalibration_after_failed_verification(self, best_candidate):
-        if self.recalibration_auto_restart_count >= RECALIBRATION_MAX_AUTO_RESTARTS:
+        if self.recalibration_auto_restart_count >= RECALIBRATION_CONFIG.max_auto_restarts:
             return False
 
         try:
@@ -5075,9 +4999,9 @@ class ThorlabsCameraViewer(QObject):
             # together) rather than random jitter, so retrying unchanged
             # positions would repeat the same failure. Widen the spacing a
             # bit more on each retry before trying again.
-            escalated_spacing_ms = RECALIBRATION_SAFE_TRIGGER_SPACING_MS + (
+            escalated_spacing_ms = RECALIBRATION_CONFIG.safe_trigger_spacing_ms + (
                 self.recalibration_incomplete_verification_retries
-                * RECALIBRATION_SAFE_TRIGGER_SPACING_MS
+                * RECALIBRATION_CONFIG.safe_trigger_spacing_ms
             )
             retry_positions = self.enforce_minimum_trigger_spacing(
                 self.recalibration_current_positions_ms,
@@ -5089,7 +5013,7 @@ class ThorlabsCameraViewer(QObject):
                 retry_positions,
                 "Status: Retrying incomplete verification capture "
                 f"{self.recalibration_incomplete_verification_retries}/"
-                f"{RECALIBRATION_MAX_INCOMPLETE_VERIFICATION_RETRIES}",
+                f"{RECALIBRATION_CONFIG.max_incomplete_verification_retries}",
             )
         except Exception as error:
             self.abort_recalibration(
@@ -5101,8 +5025,7 @@ class ThorlabsCameraViewer(QObject):
             measured_phase_deg=measured_phase_deg,
             target_phase_deg=self.get_recalibration_target_phase_deg(),
             trigger_positions_ms=self.recalibration_current_positions_ms,
-            tolerance_deg=RECALIBRATION_ERROR_TOLERANCE_DEG,
-            retry_error_limit_deg=RECALIBRATION_RETRY_ERROR_LIMIT_DEG,
+            config=RECALIBRATION_CONFIG,
         )
 
     def keep_only_recalibration_candidate(self, selected_candidate):
@@ -5384,7 +5307,7 @@ class ThorlabsCameraViewer(QObject):
             # best-candidate fallback, but must not stop timing optimisation.
             verification_passed = is_strict_recalibration_pass(
                 phase_error,
-                RECALIBRATION_ERROR_TOLERANCE_DEG,
+                RECALIBRATION_CONFIG,
             )
 
             if verification_passed:
@@ -5411,7 +5334,7 @@ class ThorlabsCameraViewer(QObject):
 
                 if (
                     self.recalibration_verification_capture_count
-                    >= RECALIBRATION_MAX_VERIFICATION_CAPTURES
+                    >= RECALIBRATION_CONFIG.max_verification_captures
                 ):
                     best_candidate = min(
                         self.recalibration_candidates,
@@ -5445,7 +5368,7 @@ class ThorlabsCameraViewer(QObject):
 
             if (
                 self.recalibration_verification_capture_count
-                >= RECALIBRATION_MAX_VERIFICATION_CAPTURES
+                >= RECALIBRATION_CONFIG.max_verification_captures
             ):
                 best_candidate = min(
                     self.recalibration_candidates,
@@ -5469,7 +5392,7 @@ class ThorlabsCameraViewer(QObject):
                 )
                 self.status_label.setText(
                     "Status: Recalibration completed after "
-                    f"{RECALIBRATION_MAX_VERIFICATION_CAPTURES} verification captures; "
+                    f"{RECALIBRATION_CONFIG.max_verification_captures} verification captures; "
                     f"kept best session with score {best_candidate['score']}"
                 )
                 return
@@ -5498,7 +5421,7 @@ class ThorlabsCameraViewer(QObject):
                     next_positions,
                     "Status: Recalibration refine "
                     f"{self.recalibration_refinement_round}/"
-                    f"{RECALIBRATION_MAX_REFINEMENT_ROUNDS}, "
+                    f"{RECALIBRATION_CONFIG.max_refinement_rounds}, "
                     f"current max error {max_abs_error:.2f} deg",
                 )
 
