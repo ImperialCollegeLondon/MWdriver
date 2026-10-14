@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import camera
 import check_measured_vs_expected_phase as phase_check
+import phase_analysis_new
 from phase_capture_process import PhaseCheckResult, run_phase_check
 from phase_capture_storage import (
     PhaseSaveResult,
@@ -48,6 +49,43 @@ class FakeSerial:
 
 
 class CameraContractTests(unittest.TestCase):
+    def test_offline_analysis_import_is_safe_and_exposes_callable(self):
+        self.assertTrue(callable(phase_analysis_new.analyze_capture))
+        self.assertFalse(hasattr(phase_analysis_new, "session_dir"))
+
+    def test_analysis_cli_main_preserves_export_and_no_viewer_options(self):
+        session_dir = Path("capture-session")
+        stack_path = session_dir / "capture_raw_stack.npy"
+        expected_result = object()
+
+        with (
+            patch.object(
+                phase_analysis_new,
+                "find_capture_input",
+                return_value=(session_dir, stack_path),
+            ),
+            patch.object(
+                phase_analysis_new,
+                "get_export_path",
+                return_value=Path("results.npz"),
+            ),
+            patch.object(
+                phase_analysis_new,
+                "analyze_capture",
+                return_value=expected_result,
+            ) as analyze,
+            patch.object(sys, "argv", ["phase_analysis_new.py", "--no-viewer", "--export", "results.npz"]),
+        ):
+            result = phase_analysis_new.main()
+
+        self.assertIs(result, expected_result)
+        analyze.assert_called_once_with(
+            session_dir,
+            stack_path,
+            export_path=Path("results.npz"),
+            show_viewer=False,
+        )
+
     def test_capture_directory_allocator_skips_existing_suffixes(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             first = allocate_capture_session_dir(
