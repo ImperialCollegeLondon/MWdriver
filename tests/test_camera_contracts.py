@@ -637,12 +637,18 @@ class CameraContractTests(unittest.TestCase):
 
     @staticmethod
     def load_controller_method(method_name, namespace):
-        camera_path = ROOT / "src" / "camera.py"
+        if method_name == "wait_for_trigger_update_ack":
+            camera_path = ROOT / "src" / "camera_recalibration_controller.py"
+            class_name = "CameraRecalibrationController"
+        else:
+            camera_path = ROOT / "src" / "camera.py"
+            class_name = "ThorlabsCameraViewer"
+
         camera_tree = ast.parse(camera_path.read_text(encoding="utf-8"))
         viewer_class = next(
             node for node in camera_tree.body
             if isinstance(node, ast.ClassDef)
-            and node.name == "ThorlabsCameraViewer"
+            and node.name == class_name
         )
         method_node = next(
             node for node in viewer_class.body
