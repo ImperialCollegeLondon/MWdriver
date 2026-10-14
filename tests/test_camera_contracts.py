@@ -1,7 +1,9 @@
+import ast
 import json
 import sys
 import tempfile
 import unittest
+import time
 import ast
 from pathlib import Path
 from types import MethodType, SimpleNamespace
@@ -39,6 +41,24 @@ class FakeSerial:
 
 
 class CameraContractTests(unittest.TestCase):
+    @staticmethod
+    def load_controller_method(method_name, namespace):
+        camera_path = ROOT / "src" / "camera.py"
+        camera_tree = ast.parse(camera_path.read_text(encoding="utf-8"))
+        viewer_class = next(
+            node for node in camera_tree.body
+            if isinstance(node, ast.ClassDef)
+            and node.name == "ThorlabsCameraViewer"
+        )
+        method_node = next(
+            node for node in viewer_class.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == method_name
+        )
+        method_module = ast.Module(body=[method_node], type_ignores=[])
+        exec(compile(method_module, str(camera_path), "exec"), namespace)
+        return namespace[method_name]
+
     @staticmethod
     def load_save_result_handler():
         camera_path = ROOT / "src" / "camera.py"
@@ -161,6 +181,107 @@ class CameraContractTests(unittest.TestCase):
         )
         self.assertTrue(serial_port.flushed)
 
+    def test_pico_ack_parser_records_positions_and_rejections(self):
+        viewer = SimpleNamespace(
+            last_trigger_update_ack_positions_ms=None,
+            last_trigger_update_error_text=None,
+        )
+        parse_message = self.load_controller_method(
+            "print_pico_message",
+            {"ast": ast},
+        )
+
+        parse_message(viewer, "Pico says: TRIGGER_POSITIONS_UPDATED_MS: [100, 164, 222, 276, 330, 384]")
+        self.assertEqual(
+            viewer.last_trigger_update_ack_positions_ms,
+            [100, 164, 222, 276, 330, 384],
+        )
+        self.assertIsNone(viewer.last_trigger_update_error_text)
+
+        parse_message(viewer, "Pico says: TRIGGER_POSITIONS_UPDATE_ERROR: invalid count")
+        self.assertIn("invalid count", viewer.last_trigger_update_error_text)
+
+    def test_trigger_ack_wait_accepts_matching_rounded_positions(self):
+        class FakeApplication:
+            @staticmethod
+            def processEvents():
+                pass
+
+        viewer = SimpleNamespace(
+            last_trigger_update_ack_positions_ms=[100, 164, 222, 276, 330, 384],
+            last_trigger_update_error_text=None,
+        )
+        wait_for_ack = self.load_controller_method(
+            "wait_for_trigger_update_ack",
+            {
+                "time": time,
+                "QCoreApplication": FakeApplication,
+                "RECALIBRATION_TRIGGER_UPDATE_ACK_TIMEOUT_S": 1.5,
+            },
+        )
+
+        self.assertIsNone(wait_for_ack(
+            viewer,
+            [100.2, 163.7, 222, 276, 330, 384],
+        ))
+
+    def test_trigger_ack_wait_reports_rejection_mismatch_and_timeout(self):
+        class FakeApplication:
+            @staticmethod
+            def processEvents():
+                pass
+
+        wait_for_ack = self.load_controller_method(
+            "wait_for_trigger_update_ack",
+            {
+                "time": time,
+                "QCoreApplication": FakeApplication,
+                "RECALIBRATION_TRIGGER_UPDATE_ACK_TIMEOUT_S": 1.5,
+            },
+        )
+        expected = [100, 164, 222, 276, 330, 384]
+
+        with self.assertRaisesRegex(RuntimeError, "Pico rejected trigger update"):
+            wait_for_ack(SimpleNamespace(
+                last_trigger_update_ack_positions_ms=None,
+                last_trigger_update_error_text="TRIGGER_POSITIONS_UPDATE_ERROR: invalid",
+            ), expected)
+
+        with self.assertRaisesRegex(RuntimeError, "ACK mismatch"):
+            wait_for_ack(SimpleNamespace(
+                last_trigger_update_ack_positions_ms=[100, 164, 222, 276, 330, 385],
+                last_trigger_update_error_text=None,
+            ), expected)
+
+        class ExpiredClock:
+            calls = 0
+
+            @classmethod
+            def monotonic(cls):
+                cls.calls += 1
+                return 0.0 if cls.calls == 1 else 2.0
+
+            @staticmethod
+            def sleep(_duration):
+                pass
+
+        timeout_wait_for_ack = self.load_controller_method(
+            "wait_for_trigger_update_ack",
+            {
+                "time": ExpiredClock,
+                "QCoreApplication": FakeApplication,
+                "RECALIBRATION_TRIGGER_UPDATE_ACK_TIMEOUT_S": 1.5,
+            },
+        )
+        with self.assertRaisesRegex(TimeoutError, "Timed out waiting for Pico"):
+            timeout_wait_for_ack(
+                SimpleNamespace(
+                    last_trigger_update_ack_positions_ms=None,
+                    last_trigger_update_error_text=None,
+                ),
+                expected,
+            )
+
     def test_phase_save_worker_preserves_paths_filenames_and_metadata(self):
         timestamp = "20261014_120000"
         frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
@@ -230,6 +351,47 @@ class CameraContractTests(unittest.TestCase):
                     metadata["phase_capture_model"]["phase_order"],
                     "phase_0 to phase_5",
                 )
+
+    def test_phase_save_worker_reports_checker_failure_without_losing_capture(self):
+        frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            worker = camera.PhaseSaveWorker(
+                frames=frames,
+                save_dir=temporary_directory,
+                session_prefix="phase_calibration",
+            )
+            worker.run_automatic_phase_check = lambda _session_dir: {
+                "success": False,
+                "message": "simulated checker failure",
+            }
+            results = []
+            worker.result_ready.connect(results.append)
+
+            with patch.object(camera.time, "strftime", return_value="20261014_120200"):
+                worker.run()
+            self.assertTrue(results[0]["save_success"])
+            self.assertFalse(results[0]["phase_check_success"])
+            self.assertTrue(Path(results[0]["raw_stack_path"]).is_file())
+
+    def test_phase_save_worker_reports_storage_failure(self):
+        frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            worker = camera.PhaseSaveWorker(
+                frames=frames,
+                save_dir=temporary_directory,
+                session_prefix="phase_calibration",
+            )
+            results = []
+            worker.result_ready.connect(results.append)
+
+            with (
+                patch.object(camera.time, "strftime", return_value="20261014_120201"),
+                patch.object(camera.np, "save", side_effect=OSError("disk full")),
+            ):
+                worker.run()
+
+        self.assertFalse(results[0]["save_success"])
+        self.assertIn("disk full", results[0]["error"])
 
     def test_phase_checker_writes_expected_json_contract(self):
         timestamp = "20261014_120100"
