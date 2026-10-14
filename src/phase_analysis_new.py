@@ -18,6 +18,7 @@ from phase_psi import (
     get_algorithm_id_from_metadata,
     reconstruct_phase,
 )
+from phase_unwrap import unwrap_phase_from_center
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -387,24 +388,12 @@ def analyze_capture(
     )
 
 
-    # ---------------------------------------------------------------------
-    # Unwrap from the centre outward, preserving the original notebook logic
-    # ---------------------------------------------------------------------
-    q = np.zeros_like(phase, dtype=np.float64)
-
-    q[unwrap_center_y:, :] = np.unwrap(
-        phase[unwrap_center_y:, :].filled(0.0),
-        axis=0,
+    vertical_unwrapped, phaseUW = unwrap_phase_from_center(
+        phase,
+        mask,
+        unwrap_center_y,
+        unwrap_center_x,
     )
-    q[unwrap_center_y::-1, :] = np.unwrap(
-        phase[unwrap_center_y::-1, :].filled(0.0),
-        axis=0,
-    )
-    vertical_unwrapped = np.ma.masked_array(q.copy(), mask=mask)
-    q[:, unwrap_center_x:] = np.unwrap(q[:, unwrap_center_x:], axis=1)
-    q[:, unwrap_center_x::-1] = np.unwrap(q[:, unwrap_center_x::-1], axis=1)
-
-    phaseUW = np.ma.masked_array(q, mask=mask)
 
     save_intermediate_png(
         session_dir / "phase_intermediate_05_vertical_unwrapped.png",
