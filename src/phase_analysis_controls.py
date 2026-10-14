@@ -4,6 +4,42 @@ import numpy as np
 from qtpy.QtWidgets import QComboBox, QLabel, QPushButton, QVBoxLayout, QWidget
 
 
+def build_phase_analysis_result_options(phase_analysis_results):
+    aberration_label = "Defocus removed (nm OPD)"
+    aberration_rms = phase_analysis_results.get("wavefront_aberration_rms_nm")
+    aberration_pv = phase_analysis_results.get("wavefront_aberration_pv_nm")
+    if aberration_rms is not None and aberration_pv is not None:
+        aberration_label = (
+            f"Defocus removed: RMS {float(aberration_rms):.2f} nm, "
+            f"PV {float(aberration_pv):.2f} nm"
+        )
+
+    result_options = [
+        ("Wrapped phase", "wrapped"),
+        ("Unwrapped phase", "unwrapped"),
+        ("Tilt removed", "tilt_removed"),
+        (aberration_label, "wavefront_aberration_nm"),
+        ("Residual surface (nm)", "residual_nm"),
+        (
+            "Zernike J1-J15 before piston/tilt removal",
+            "zernike_before_plot_rgb",
+        ),
+        (
+            "Zernike J1-J15 after piston/tilt removal",
+            "zernike_after_plot_rgb",
+        ),
+        (
+            "ROI system aberration composition",
+            "aberration_composition_plot_rgb",
+        ),
+    ]
+    return [
+        (label, key)
+        for label, key in result_options
+        if key in phase_analysis_results
+    ]
+
+
 def build_analysis_layer_presentation(result_key, result_data, source_name, result_name):
     result_data = np.asarray(result_data)
     is_rgb = result_data.ndim == 3 and result_data.shape[-1] in (3, 4)

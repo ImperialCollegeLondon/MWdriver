@@ -50,6 +50,7 @@ from roi_controls import create_roi_menu
 from profile_controls import create_profile_controls
 from phase_analysis_controls import (
     build_analysis_layer_presentation,
+    build_phase_analysis_result_options,
     create_phase_analysis_controls,
 )
 from intensity_profile import (
@@ -3286,38 +3287,9 @@ class ThorlabsCameraViewer(QObject):
             )
 
     def create_phase_analysis_controls(self, selected_key=None):
-        aberration_label = "Defocus removed (nm OPD)"
-        aberration_rms = self.phase_analysis_results.get(
-            "wavefront_aberration_rms_nm"
+        result_options = build_phase_analysis_result_options(
+            self.phase_analysis_results
         )
-        aberration_pv = self.phase_analysis_results.get(
-            "wavefront_aberration_pv_nm"
-        )
-        if aberration_rms is not None and aberration_pv is not None:
-            aberration_label = (
-                f"Defocus removed: RMS {float(aberration_rms):.2f} nm, "
-                f"PV {float(aberration_pv):.2f} nm"
-            )
-
-        result_options = [
-            ("Wrapped phase", "wrapped"),
-            ("Unwrapped phase", "unwrapped"),
-            ("Tilt removed", "tilt_removed"),
-            (aberration_label, "wavefront_aberration_nm"),
-            ("Residual surface (nm)", "residual_nm"),
-            (
-                "Zernike J1-J15 before piston/tilt removal",
-                "zernike_before_plot_rgb",
-            ),
-            (
-                "Zernike J1-J15 after piston/tilt removal",
-                "zernike_after_plot_rgb",
-            ),
-            (
-                "ROI system aberration composition",
-                "aberration_composition_plot_rgb",
-            ),
-        ]
 
         if self.phase_analysis_controls_widget is None:
             (
@@ -3337,8 +3309,7 @@ class ThorlabsCameraViewer(QObject):
         self.phase_analysis_selector.blockSignals(True)
         self.phase_analysis_selector.clear()
         for label, key in result_options:
-            if key in self.phase_analysis_results:
-                self.phase_analysis_selector.addItem(label, key)
+            self.phase_analysis_selector.addItem(label, key)
 
         current_index = self.phase_analysis_selector.findData(current_key)
         if current_index < 0 and self.phase_analysis_selector.count() > 0:

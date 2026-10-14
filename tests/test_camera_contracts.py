@@ -36,6 +36,7 @@ from roi_controls import create_roi_menu
 from profile_controls import create_profile_controls
 from phase_analysis_controls import (
     build_analysis_layer_presentation,
+    build_phase_analysis_result_options,
     create_phase_analysis_controls,
 )
 from qtpy.QtWidgets import QApplication
@@ -67,6 +68,41 @@ class FakeSignal:
 
 
 class CameraContractTests(unittest.TestCase):
+    def test_phase_analysis_result_options_filter_and_format_metrics(self):
+        options = build_phase_analysis_result_options({
+            "wrapped": np.zeros((2, 2)),
+            "wavefront_aberration_nm": np.zeros((2, 2)),
+            "wavefront_aberration_rms_nm": np.float32(12.345),
+            "wavefront_aberration_pv_nm": np.float32(67.891),
+            "zernike_after_plot_rgb": np.zeros((2, 2, 3)),
+        })
+
+        self.assertEqual(
+            options,
+            [
+                ("Wrapped phase", "wrapped"),
+                (
+                    "Defocus removed: RMS 12.35 nm, PV 67.89 nm",
+                    "wavefront_aberration_nm",
+                ),
+                (
+                    "Zernike J1-J15 after piston/tilt removal",
+                    "zernike_after_plot_rgb",
+                ),
+            ],
+        )
+
+    def test_phase_analysis_result_options_use_legacy_metric_label(self):
+        options = build_phase_analysis_result_options({
+            "wavefront_aberration_nm": np.zeros((2, 2)),
+            "wavefront_aberration_rms_nm": 12.345,
+        })
+
+        self.assertEqual(
+            options,
+            [("Defocus removed (nm OPD)", "wavefront_aberration_nm")],
+        )
+
     def test_analysis_layer_presentation_selects_name_rgb_cmap_and_limits(self):
         phase = build_analysis_layer_presentation(
             "phase_0",
