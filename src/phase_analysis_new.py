@@ -16,6 +16,7 @@ from phase_psi import (
     ALGORITHMS as PSI_ALGORITHMS,
     DEFAULT_ALGORITHM as DEFAULT_PSI_ALGORITHM,
     get_algorithm_id_from_metadata,
+    phase_components,
     reconstruct_phase,
 )
 from phase_unwrap import unwrap_phase_from_center
@@ -315,18 +316,7 @@ def analyze_capture(
     # ---------------------------------------------------------------------
     # Six-frame wrapped-phase recovery selected by capture metadata.
     # ---------------------------------------------------------------------
-    if algorithm_id == DEFAULT_PSI_ALGORITHM:
-        phase_numerator = 4.0 * data[3] - 3.0 * data[1] - data[5]
-        phase_denominator = data[0] - 4.0 * data[2] + 3.0 * data[4]
-    else:
-        phase_steps_rad = np.deg2rad(np.asarray(expected_phase_deg))
-        phase_numerator = -np.tensordot(
-            np.sin(phase_steps_rad), data, axes=(0, 0)
-        )
-        phase_denominator = np.tensordot(
-            np.cos(phase_steps_rad), data, axes=(0, 0)
-        )
-
+    phase_numerator, phase_denominator = phase_components(data, algorithm_id)
     phase = reconstruct_phase(data, algorithm_id)
     phase = np.ma.masked_array(phase, mask=mask)
 

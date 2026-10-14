@@ -12,6 +12,7 @@ from phase_psi import (
     LEGACY_90_DEG,
     SIX_BUCKET_60_DEG,
     get_algorithm_id_from_metadata,
+    phase_components,
     reconstruct_phase,
 )
 
@@ -33,6 +34,19 @@ class PhaseReconstructionTests(unittest.TestCase):
 
     def test_60_degree_six_bucket_reconstruction(self):
         self.assert_phase_recovered(SIX_BUCKET_60_DEG)
+
+    def test_phase_components_reconstruct_same_phase_for_both_algorithms(self):
+        for algorithm_id in (LEGACY_90_DEG, SIX_BUCKET_60_DEG):
+            frames = self.make_interferogram(
+                algorithm_id,
+                np.linspace(-np.pi, np.pi, 17),
+            )
+            numerator, denominator = phase_components(frames, algorithm_id)
+            np.testing.assert_allclose(
+                np.arctan2(numerator, denominator),
+                reconstruct_phase(frames, algorithm_id),
+                atol=0.0,
+            )
 
     def test_reconstruction_requires_six_frames(self):
         with self.assertRaises(ValueError):

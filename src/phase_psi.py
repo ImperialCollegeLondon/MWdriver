@@ -39,8 +39,8 @@ def get_algorithm_id_from_metadata(metadata):
     return algorithm_id
 
 
-def reconstruct_phase(frames, algorithm_id=DEFAULT_ALGORITHM):
-    """Recover wrapped phase from six intensity frames along axis zero."""
+def phase_components(frames, algorithm_id=DEFAULT_ALGORITHM):
+    """Return the phase numerator and denominator for six intensity frames."""
     data = np.asarray(frames, dtype=np.float64)
     if data.ndim < 1 or data.shape[0] != 6:
         raise ValueError(f"Expected six frames along axis zero, got {data.shape}.")
@@ -49,15 +49,17 @@ def reconstruct_phase(frames, algorithm_id=DEFAULT_ALGORITHM):
     if algorithm_id == LEGACY_90_DEG:
         numerator = 4.0 * data[3] - 3.0 * data[1] - data[5]
         denominator = data[0] - 4.0 * data[2] + 3.0 * data[4]
-        return np.arctan2(numerator, denominator)
+        return numerator, denominator
 
     phase_steps = np.deg2rad(
         np.asarray(ALGORITHMS[algorithm_id]["expected_phase_deg"])
     )
-    cosine_component = np.tensordot(
-        np.cos(phase_steps), data, axes=(0, 0)
-    )
-    sine_component = np.tensordot(
-        np.sin(phase_steps), data, axes=(0, 0)
-    )
-    return np.arctan2(-sine_component, cosine_component)
+    numerator = -np.tensordot(np.sin(phase_steps), data, axes=(0, 0))
+    denominator = np.tensordot(np.cos(phase_steps), data, axes=(0, 0))
+    return numerator, denominator
+
+
+def reconstruct_phase(frames, algorithm_id=DEFAULT_ALGORITHM):
+    """Recover wrapped phase from six intensity frames along axis zero."""
+    numerator, denominator = phase_components(frames, algorithm_id)
+    return np.arctan2(numerator, denominator)
