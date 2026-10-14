@@ -37,6 +37,7 @@ from profile_controls import create_profile_controls
 from phase_analysis_controls import (
     build_analysis_layer_presentation,
     build_phase_analysis_result_options,
+    choose_analysis_layer_operation,
     create_phase_analysis_controls,
 )
 from qtpy.QtWidgets import QApplication
@@ -68,6 +69,67 @@ class FakeSignal:
 
 
 class CameraContractTests(unittest.TestCase):
+    def test_analysis_layer_operation_covers_add_replace_and_update(self):
+        cases = [
+            (
+                {
+                    "create_new_layer": True,
+                    "has_current_layer": True,
+                    "has_current_record": True,
+                    "current_layer_is_rgb": False,
+                    "result_is_rgb": False,
+                },
+                "add",
+            ),
+            (
+                {
+                    "create_new_layer": False,
+                    "has_current_layer": False,
+                    "has_current_record": False,
+                    "current_layer_is_rgb": False,
+                    "result_is_rgb": False,
+                },
+                "add",
+            ),
+            (
+                {
+                    "create_new_layer": False,
+                    "has_current_layer": True,
+                    "has_current_record": False,
+                    "current_layer_is_rgb": False,
+                    "result_is_rgb": False,
+                },
+                "replace",
+            ),
+            (
+                {
+                    "create_new_layer": False,
+                    "has_current_layer": True,
+                    "has_current_record": True,
+                    "current_layer_is_rgb": False,
+                    "result_is_rgb": True,
+                },
+                "replace",
+            ),
+            (
+                {
+                    "create_new_layer": False,
+                    "has_current_layer": True,
+                    "has_current_record": True,
+                    "current_layer_is_rgb": True,
+                    "result_is_rgb": True,
+                },
+                "update",
+            ),
+        ]
+
+        for options, expected in cases:
+            with self.subTest(options=options):
+                self.assertEqual(
+                    choose_analysis_layer_operation(**options),
+                    expected,
+                )
+
     def test_phase_analysis_result_options_filter_and_format_metrics(self):
         options = build_phase_analysis_result_options({
             "wrapped": np.zeros((2, 2)),

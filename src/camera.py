@@ -51,6 +51,7 @@ from profile_controls import create_profile_controls
 from phase_analysis_controls import (
     build_analysis_layer_presentation,
     build_phase_analysis_result_options,
+    choose_analysis_layer_operation,
     create_phase_analysis_controls,
 )
 from intensity_profile import (
@@ -3353,15 +3354,16 @@ class ThorlabsCameraViewer(QObject):
             None,
         )
         layer_is_rgb = bool(getattr(self.phase_analysis_layer, "rgb", False))
-        replace_layer = (
-            create_new_layer
-            or self.phase_analysis_layer is None
-            or current_record is None
-            or layer_is_rgb != is_rgb
+        layer_operation = choose_analysis_layer_operation(
+            create_new_layer=create_new_layer,
+            has_current_layer=self.phase_analysis_layer is not None,
+            has_current_record=current_record is not None,
+            current_layer_is_rgb=layer_is_rgb,
+            result_is_rgb=is_rgb,
         )
 
-        if replace_layer:
-            if self.phase_analysis_layer is not None and not create_new_layer:
+        if layer_operation != "update":
+            if layer_operation == "replace":
                 try:
                     self.viewer.layers.remove(self.phase_analysis_layer)
                 except ValueError:

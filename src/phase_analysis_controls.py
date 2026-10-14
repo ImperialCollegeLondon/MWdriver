@@ -4,6 +4,20 @@ import numpy as np
 from qtpy.QtWidgets import QComboBox, QLabel, QPushButton, QVBoxLayout, QWidget
 
 
+def choose_analysis_layer_operation(
+    create_new_layer,
+    has_current_layer,
+    has_current_record,
+    current_layer_is_rgb,
+    result_is_rgb,
+):
+    if create_new_layer or not has_current_layer:
+        return "add"
+    if not has_current_record or current_layer_is_rgb != result_is_rgb:
+        return "replace"
+    return "update"
+
+
 def build_phase_analysis_result_options(phase_analysis_results):
     aberration_label = "Defocus removed (nm OPD)"
     aberration_rms = phase_analysis_results.get("wavefront_aberration_rms_nm")
