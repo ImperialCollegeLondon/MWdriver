@@ -20,6 +20,18 @@ class PhaseFrameAssignmentDecision:
     status: str
 
 
+def decide_triangle_done_action(
+    phase_capture_active,
+    phase_capture_count,
+    phase_count=6,
+):
+    if not phase_capture_active:
+        return "finalized"
+    if phase_capture_count < phase_count:
+        return "await_late_frames"
+    return "finish_now"
+
+
 def decide_phase_frame_assignment(
     phase_capture_active,
     phase_index,

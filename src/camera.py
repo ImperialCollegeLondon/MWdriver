@@ -47,6 +47,7 @@ from phase_capture_frame_filter import (
     decide_framestamp_phase_slot,
     decide_native_phase_frame,
     decide_phase_frame_assignment,
+    decide_triangle_done_action,
     select_queued_phase_slots,
     should_accept_phase_frame,
 )
@@ -2750,9 +2751,15 @@ class ThorlabsCameraViewer(QObject):
 
         print("TRIANGLE_DONE received from Pico.")
 
+        completion_action = decide_triangle_done_action(
+            self.phase_capture_active,
+            self.phase_capture_count,
+            phase_count=PHASE_CAPTURE_COUNT,
+        )
+
         # Normal successful path: the six-frame acquisition was finalized
         # before this serial message arrived.
-        if not self.phase_capture_active:
+        if completion_action == "finalized":
             print(
                 "TRIANGLE_DONE arrived after the six-frame capture "
                 "had already been finalized."
@@ -2778,7 +2785,7 @@ class ThorlabsCameraViewer(QObject):
 
         # A real capture session is still active. Give delayed camera frames
         # time to arrive only when fewer than six frames are currently present.
-        if self.phase_capture_count < PHASE_CAPTURE_COUNT:
+        if completion_action == "await_late_frames":
             self.phase_label.setText(
                 f"Phase Capture: Triangle done, only "
                 f"{self.phase_capture_count}/6 captured"

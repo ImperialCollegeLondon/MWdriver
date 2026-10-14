@@ -10,6 +10,7 @@ from phase_capture_frame_filter import (
     decide_framestamp_phase_slot,
     decide_native_phase_frame,
     decide_phase_frame_assignment,
+    decide_triangle_done_action,
     select_queued_phase_slots,
     should_accept_phase_frame,
 )
@@ -21,6 +22,22 @@ from phase_capture_timestamps import (
 
 
 class PhaseCaptureFrameFilterTests(unittest.TestCase):
+    def test_triangle_done_checks_finalized_state_before_reset_count(self):
+        self.assertEqual(
+            decide_triangle_done_action(False, 0),
+            "finalized",
+        )
+
+    def test_triangle_done_waits_for_late_frames_or_finishes_complete_capture(self):
+        self.assertEqual(
+            decide_triangle_done_action(True, 5),
+            "await_late_frames",
+        )
+        self.assertEqual(
+            decide_triangle_done_action(True, 6),
+            "finish_now",
+        )
+
     def test_phase_assignment_decision_rejects_inactive_invalid_and_occupied(self):
         phase_frames = [None, object(), None]
 
