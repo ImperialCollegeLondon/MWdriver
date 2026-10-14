@@ -42,6 +42,7 @@ from phase_capture_frame_filter import should_accept_phase_frame
 from roi_geometry import build_inside_mask
 from roi_controls import create_roi_menu
 from profile_controls import create_profile_controls
+from phase_analysis_controls import create_phase_analysis_controls
 from phase_capture_storage import (
     allocate_capture_session_dir,
     generate_phase_analysis_notebook,
@@ -3429,32 +3430,14 @@ class ThorlabsCameraViewer(QObject):
         ]
 
         if self.phase_analysis_controls_widget is None:
-            self.phase_analysis_controls_widget = QWidget()
-            self.phase_analysis_controls_widget.setObjectName(
-                "embedded_phase_analysis_controls"
-            )
-
-            layout = QVBoxLayout()
-            layout.setContentsMargins(4, 4, 4, 4)
-            layout.setSpacing(5)
-
-            self.phase_analysis_title_label = QLabel()
-            self.phase_analysis_title_label.setStyleSheet("font-weight: bold;")
-            self.phase_analysis_selector = QComboBox()
-            self.view_phase_analysis_button = QPushButton(
-                "View Analysis Results"
-            )
-
-            layout.addWidget(self.phase_analysis_title_label)
-            layout.addWidget(self.phase_analysis_selector)
-            layout.addWidget(self.view_phase_analysis_button)
-            self.phase_analysis_controls_widget.setLayout(layout)
-
-            self.phase_analysis_selector.currentIndexChanged.connect(
-                self.on_phase_analysis_selection_changed
-            )
-            self.view_phase_analysis_button.clicked.connect(
-                self.toggle_phase_analysis_view
+            (
+                self.phase_analysis_controls_widget,
+                self.phase_analysis_title_label,
+                self.phase_analysis_selector,
+                self.view_phase_analysis_button,
+            ) = create_phase_analysis_controls(
+                self.on_phase_analysis_selection_changed,
+                self.toggle_phase_analysis_view,
             )
 
         self.phase_analysis_title_label.setText(

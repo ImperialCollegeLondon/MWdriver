@@ -31,6 +31,7 @@ from recalibration import (
 )
 from roi_controls import create_roi_menu
 from profile_controls import create_profile_controls
+from phase_analysis_controls import create_phase_analysis_controls
 from qtpy.QtWidgets import QApplication
 
 
@@ -70,6 +71,28 @@ class CameraContractTests(unittest.TestCase):
         self.assertEqual(clear_button.text(), "Clear Profile")
         self.assertEqual(profile_button.minimumHeight(), 28)
         self.assertEqual(clear_button.minimumHeight(), 28)
+
+    def test_phase_analysis_controls_widget_connects_view_callbacks(self):
+        application = QApplication.instance() or QApplication([])
+        calls = []
+        widget, title, selector, view_button = create_phase_analysis_controls(
+            lambda index: calls.append(("selection", index)),
+            lambda: calls.append(("view",)),
+        )
+        self.addCleanup(widget.deleteLater)
+
+        self.assertIsNotNone(application)
+        self.assertEqual(widget.objectName(), "embedded_phase_analysis_controls")
+        self.assertEqual(view_button.text(), "View Analysis Results")
+        title.setText("Review: capture")
+        selector.addItem("Wrapped phase", "wrapped")
+        selector.setCurrentIndex(0)
+        view_button.click()
+
+        self.assertEqual(title.text(), "Review: capture")
+        self.assertEqual(selector.currentData(), "wrapped")
+        self.assertIn(("selection", 0), calls)
+        self.assertIn(("view",), calls)
 
     def test_roi_menu_actions_preserve_order_labels_and_callbacks(self):
         class FakeAction:
