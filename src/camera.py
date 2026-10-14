@@ -33,6 +33,7 @@ from thorlabs_native_camera import NativeThorlabsCamera
 import napari
 from application_bootstrap import run_application
 from layer_visibility import build_layer_visibility_plan
+from stream_policy import get_camera_stream_mode
 
 import matplotlib.pyplot as plt
 
@@ -750,19 +751,16 @@ class ThorlabsCameraViewer(QObject):
             layer.visible = visible
 
     def sync_stream_with_active_layer(self):
-        preview_streaming = (
-            self.streaming_allowed
-            and self.layer is not None
-            and self.layer.visible
-            and self.current_camera_mode == "live"
-            and not self.phase_capture_active
-            and not self.recalibration_active
+        stream_mode = get_camera_stream_mode(
+            streaming_allowed=self.streaming_allowed,
+            preview_layer_visible=(
+                self.layer is not None and self.layer.visible
+            ),
+            camera_mode=self.current_camera_mode,
+            phase_capture_active=self.phase_capture_active,
+            recalibration_active=self.recalibration_active,
         )
-        capture_reading = (
-            self.phase_capture_active
-            and self.current_camera_mode == "external"
-        )
-        if preview_streaming or capture_reading:
+        if stream_mode != "stopped":
             self.start_stream()
         else:
             self.stop_stream()
@@ -2111,19 +2109,16 @@ class ThorlabsCameraViewer(QObject):
         if self.is_streaming:
             return
 
-        preview_streaming = (
-            self.streaming_allowed
-            and self.layer is not None
-            and self.layer.visible
-            and self.current_camera_mode == "live"
-            and not self.phase_capture_active
-            and not self.recalibration_active
+        stream_mode = get_camera_stream_mode(
+            streaming_allowed=self.streaming_allowed,
+            preview_layer_visible=(
+                self.layer is not None and self.layer.visible
+            ),
+            camera_mode=self.current_camera_mode,
+            phase_capture_active=self.phase_capture_active,
+            recalibration_active=self.recalibration_active,
         )
-        capture_reading = (
-            self.phase_capture_active
-            and self.current_camera_mode == "external"
-        )
-        if not preview_streaming and not capture_reading:
+        if stream_mode == "stopped":
             return
 
         self.is_streaming = True
