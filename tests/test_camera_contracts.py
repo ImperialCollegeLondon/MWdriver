@@ -19,6 +19,7 @@ import camera
 import check_measured_vs_expected_phase as phase_check
 from phase_capture_process import PhaseCheckResult, run_phase_check
 from phase_capture_storage import (
+    PhaseSaveResult,
     allocate_capture_session_dir,
     generate_phase_analysis_notebook,
 )
@@ -161,6 +162,7 @@ class CameraContractTests(unittest.TestCase):
             "np": np,
             "os": __import__("os"),
             "json": json,
+            "PhaseSaveResult": PhaseSaveResult,
             "RECALIBRATION_CONFIG": camera.RECALIBRATION_CONFIG,
             "is_strict_recalibration_pass": camera.is_strict_recalibration_pass,
         }
@@ -436,8 +438,8 @@ class CameraContractTests(unittest.TestCase):
                 with patch.object(camera.time, "strftime", return_value=timestamp):
                     worker.run()
 
-                self.assertTrue(results[0]["save_success"])
-                session_dirs.append(Path(results[0]["session_dir"]))
+                self.assertTrue(results[0].save_success)
+                session_dirs.append(Path(results[0].session_dir))
 
             self.assertEqual(
                 [path.name for path in session_dirs],
@@ -502,9 +504,9 @@ class CameraContractTests(unittest.TestCase):
 
             with patch.object(camera.time, "strftime", return_value="20261014_120200"):
                 worker.run()
-            self.assertTrue(results[0]["save_success"])
-            self.assertFalse(results[0]["phase_check_success"])
-            self.assertTrue(Path(results[0]["raw_stack_path"]).is_file())
+            self.assertTrue(results[0].save_success)
+            self.assertFalse(results[0].phase_check_success)
+            self.assertTrue(Path(results[0].raw_stack_path).is_file())
 
     def test_phase_save_worker_reports_storage_failure(self):
         frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
@@ -523,8 +525,8 @@ class CameraContractTests(unittest.TestCase):
             ):
                 worker.run()
 
-        self.assertFalse(results[0]["save_success"])
-        self.assertIn("disk full", results[0]["error"])
+        self.assertFalse(results[0].save_success)
+        self.assertIn("disk full", results[0].error)
 
     def test_phase_check_process_returns_success_only_with_outputs(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -713,11 +715,13 @@ class CameraContractTests(unittest.TestCase):
                 queue_or_defer_recalibration_phase_capture=lambda positions, status: queued.append((positions, status)),
             )
 
-            self.load_save_result_handler()(viewer, {
-                "save_success": True,
-                "session_dir": temporary_directory,
-                "phase_check_json_path": str(check_path),
-            })
+            self.load_save_result_handler()(viewer, PhaseSaveResult(
+                save_success=True,
+                session_dir=temporary_directory,
+                raw_stack_path=None,
+                metadata_path=None,
+                phase_check_json_path=str(check_path),
+            ))
 
         self.assertEqual(viewer.recalibration_verification_capture_count, 1)
         self.assertEqual(viewer.recalibration_refinement_round, 1)
@@ -767,11 +771,13 @@ class CameraContractTests(unittest.TestCase):
                 finalize_recalibration_candidate=lambda **kwargs: finalized.append(kwargs),
             )
 
-            self.load_save_result_handler()(viewer, {
-                "save_success": True,
-                "session_dir": temporary_directory,
-                "phase_check_json_path": str(check_path),
-            })
+            self.load_save_result_handler()(viewer, PhaseSaveResult(
+                save_success=True,
+                session_dir=temporary_directory,
+                raw_stack_path=None,
+                metadata_path=None,
+                phase_check_json_path=str(check_path),
+            ))
 
         self.assertEqual(len(finalized), 1)
         self.assertTrue(finalized[0]["fallback_used"])

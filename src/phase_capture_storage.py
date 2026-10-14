@@ -17,6 +17,19 @@ class NotebookGenerationResult:
     message: str
 
 
+@dataclass(frozen=True)
+class PhaseSaveResult:
+    save_success: bool
+    session_dir: str | None
+    raw_stack_path: str | None
+    metadata_path: str | None
+    phase_check_success: bool | None = None
+    phase_check_json_path: str | None = None
+    phase_check_figure_path: str | None = None
+    phase_voltage_plot_path: str | None = None
+    error: str | None = None
+
+
 def allocate_capture_session_dir(save_dir, session_prefix, timestamp):
     os.makedirs(save_dir, exist_ok=True)
 

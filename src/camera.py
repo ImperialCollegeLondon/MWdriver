@@ -45,6 +45,7 @@ from phase_capture_frame_filter import should_accept_phase_frame
 from phase_capture_storage import (
     allocate_capture_session_dir,
     generate_phase_analysis_notebook,
+    PhaseSaveResult,
     raw_to_viewable_uint8,
     save_phase_capture_metadata,
     save_phase_pngs,
@@ -832,28 +833,28 @@ class PhaseSaveWorker(QObject):
                     f"automatic phase check did not complete successfully"
                 )
 
-            self.result_ready.emit({
-                "save_success": True,
-                "session_dir": session_dir,
-                "raw_stack_path": npy_path,
-                "metadata_path": json_path,
-                "phase_check_success": phase_check_result.success,
-                "phase_check_json_path": phase_check_result.output_json_path,
-                "phase_check_figure_path": phase_check_result.output_figure_path,
-                "phase_voltage_plot_path": phase_voltage_plot_path,
-            })
+            self.result_ready.emit(PhaseSaveResult(
+                save_success=True,
+                session_dir=session_dir,
+                raw_stack_path=npy_path,
+                metadata_path=json_path,
+                phase_check_success=phase_check_result.success,
+                phase_check_json_path=phase_check_result.output_json_path,
+                phase_check_figure_path=phase_check_result.output_figure_path,
+                phase_voltage_plot_path=phase_voltage_plot_path,
+            ))
 
             self.finished.emit(finish_text)
 
         except Exception as e:
             error_text = f"Phase save error: {e}"
-            self.result_ready.emit({
-                "save_success": False,
-                "session_dir": session_dir,
-                "raw_stack_path": npy_path,
-                "metadata_path": json_path,
-                "error": str(e),
-            })
+            self.result_ready.emit(PhaseSaveResult(
+                save_success=False,
+                session_dir=session_dir,
+                raw_stack_path=npy_path,
+                metadata_path=json_path,
+                error=str(e),
+            ))
             self.finished.emit(error_text)
             print(error_text)
 
@@ -3889,8 +3890,8 @@ class ThorlabsCameraViewer(QObject):
 
     def find_latest_phase_analysis_session(self):
         latest_result = self.latest_phase_save_result
-        if isinstance(latest_result, dict) and latest_result.get("save_success"):
-            session_dir = latest_result.get("session_dir")
+        if isinstance(latest_result, PhaseSaveResult) and latest_result.save_success:
+            session_dir = latest_result.session_dir
             if (
                 session_dir
                 and os.path.basename(session_dir).startswith("phase_capture_")
@@ -4879,37 +4880,33 @@ class ThorlabsCameraViewer(QObject):
         self.latest_phase_save_result = result
 
         if (
-            isinstance(result, dict)
-            and result.get("save_success")
+            isinstance(result, PhaseSaveResult)
+            and result.save_success
             and self.pending_phase_capture_layer is not None
         ):
-            self.pending_phase_capture_layer.metadata["session_dir"] = result.get(
-                "session_dir"
-            )
-            self.pending_phase_capture_layer.metadata["raw_stack_path"] = result.get(
-                "raw_stack_path"
-            )
+            self.pending_phase_capture_layer.metadata["session_dir"] = result.session_dir
+            self.pending_phase_capture_layer.metadata["raw_stack_path"] = result.raw_stack_path
             self.pending_phase_capture_layer = None
-        elif isinstance(result, dict) and not result.get("save_success"):
+        elif isinstance(result, PhaseSaveResult) and not result.save_success:
             self.pending_phase_capture_layer = None
 
         if not self.recalibration_active:
             return
 
-        if not isinstance(result, dict):
+        if not isinstance(result, PhaseSaveResult):
             self.abort_recalibration(
                 "Status: Recalibration failed - invalid save result"
             )
             return
 
-        if not result.get("save_success", False):
+        if not result.save_success:
             self.abort_recalibration(
                 "Status: Recalibration failed during save"
             )
             return
 
-        session_dir = result.get("session_dir")
-        phase_check_json_path = result.get("phase_check_json_path")
+        session_dir = result.session_dir
+        phase_check_json_path = result.phase_check_json_path
 
         if not phase_check_json_path and session_dir:
             phase_check_json_path = os.path.join(
