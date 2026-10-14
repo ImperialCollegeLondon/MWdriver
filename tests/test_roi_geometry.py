@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from roi_geometry import (
     apply_mask_to_frame,
     build_inside_mask,
+    build_roi_selection,
     build_valid_mask,
     downsample_mask,
 )
@@ -84,6 +85,30 @@ class RoiGeometryTests(unittest.TestCase):
         display_mask = downsample_mask(outside_mode_mask, 2)
         np.testing.assert_array_equal(display_mask, [[True, False], [False, True]])
         self.assertTrue(display_mask.flags.c_contiguous)
+
+    def test_roi_selection_returns_consistent_mask_metadata_and_display_mask(self):
+        inside = np.asarray(
+            [[True, False], [False, True]],
+            dtype=bool,
+        )
+        for mode, expected_mode, expected_mask in (
+            ("outside", "mask_outside_area", inside),
+            ("inside", "mask_inside_area", np.logical_not(inside)),
+        ):
+            info = {"roi_type": "rectangle"}
+            valid_mask, display_mask, result_info, mode_text = build_roi_selection(
+                inside,
+                info,
+                mode,
+                display_downsample=1,
+                describe_rejected_area=True,
+            )
+            self.assertEqual(mode_text, expected_mode)
+            self.assertIs(result_info, info)
+            np.testing.assert_array_equal(valid_mask, expected_mask)
+            np.testing.assert_array_equal(display_mask, expected_mask)
+            self.assertEqual(info["mask_mode"], expected_mode)
+            self.assertIn("False means masked/rejected area", info["mask_meaning"])
 
     def test_display_mask_application_preserves_disabled_or_mismatched_frames(self):
         frame = np.arange(9, dtype=np.uint8).reshape(3, 3)

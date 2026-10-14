@@ -43,7 +43,7 @@ from phase_capture_frame_filter import should_accept_phase_frame
 from roi_geometry import (
     apply_mask_to_frame,
     build_inside_mask,
-    build_valid_mask,
+    build_roi_selection,
     downsample_mask,
 )
 from roi_controls import create_roi_menu
@@ -1764,15 +1764,19 @@ class ThorlabsCameraViewer(QObject):
             return
 
         self.mask_mode = "outside"
-        valid_mask, mask_mode_text = build_valid_mask(inside_mask, self.mask_mode)
-
-        self.current_display_mask = self.make_display_mask_from_raw_mask(valid_mask)
+        (
+            valid_mask,
+            self.current_display_mask,
+            self.roi_params,
+            mask_mode_text,
+        ) = build_roi_selection(
+            inside_mask,
+            roi_info,
+            self.mask_mode,
+            self.display_downsample,
+        )
         self.display_mask_enabled = True
-
         self.roi_mask = valid_mask
-        self.roi_params = roi_info
-        self.roi_params["mask_mode"] = mask_mode_text
-        self.roi_params["mask_meaning"] = "roi_mask.npy: True means retained valid area"
 
         self.roi_label.setText("ROI: Mask outside area - keep inside ROI")
         self.status_label.setText("Status: Mask outside area applied")
@@ -1789,16 +1793,19 @@ class ThorlabsCameraViewer(QObject):
             return
 
         self.mask_mode = "inside"
-
-        valid_mask, mask_mode_text = build_valid_mask(inside_mask, "inside")
-
-        self.current_display_mask = self.make_display_mask_from_raw_mask(valid_mask)
+        (
+            valid_mask,
+            self.current_display_mask,
+            self.roi_params,
+            mask_mode_text,
+        ) = build_roi_selection(
+            inside_mask,
+            roi_info,
+            self.mask_mode,
+            self.display_downsample,
+        )
         self.display_mask_enabled = True
-
         self.roi_mask = valid_mask
-        self.roi_params = roi_info
-        self.roi_params["mask_mode"] = mask_mode_text
-        self.roi_params["mask_meaning"] = "roi_mask.npy: True means retained valid area"
 
         self.roi_label.setText("ROI: Mask inside area - keep outside ROI")
         self.status_label.setText("Status: Mask inside area applied")
@@ -1882,17 +1889,20 @@ class ThorlabsCameraViewer(QObject):
             print("No ROI to save.")
             return
 
-        valid_mask, mask_mode_text = build_valid_mask(inside_mask, self.mask_mode)
-
-        self.roi_mask = valid_mask
-        self.roi_params = roi_info
-        self.roi_params["mask_mode"] = mask_mode_text
-        self.roi_params["mask_meaning"] = (
-            "roi_mask.npy: True means retained valid area; "
-            "False means masked/rejected area"
+        (
+            valid_mask,
+            self.current_display_mask,
+            self.roi_params,
+            mask_mode_text,
+        ) = build_roi_selection(
+            inside_mask,
+            roi_info,
+            self.mask_mode,
+            self.display_downsample,
+            describe_rejected_area=True,
         )
 
-        self.current_display_mask = self.make_display_mask_from_raw_mask(valid_mask)
+        self.roi_mask = valid_mask
         self.display_mask_enabled = True
 
         roi_json_path, roi_mask_path = save_roi_files(

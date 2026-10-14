@@ -77,6 +77,26 @@ def build_valid_mask(inside_mask, mask_mode):
     return np.asarray(inside_mask, dtype=bool), "mask_outside_area"
 
 
+def build_roi_selection(
+    inside_mask,
+    roi_info,
+    mask_mode,
+    display_downsample,
+    describe_rejected_area=False,
+):
+    valid_mask, saved_mask_mode = build_valid_mask(inside_mask, mask_mode)
+    roi_info["mask_mode"] = saved_mask_mode
+    roi_info["mask_meaning"] = "roi_mask.npy: True means retained valid area"
+    if describe_rejected_area:
+        roi_info["mask_meaning"] += "; False means masked/rejected area"
+    return (
+        valid_mask,
+        downsample_mask(valid_mask, display_downsample),
+        roi_info,
+        saved_mask_mode,
+    )
+
+
 def downsample_mask(raw_mask, display_downsample):
     if raw_mask is None:
         return None
