@@ -45,6 +45,7 @@ from roi_controls import create_roi_menu
 from profile_controls import create_profile_controls
 from phase_analysis_controls import create_phase_analysis_controls
 from intensity_profile import sample_line_profile as sample_raw_line_profile
+from profile_drag import get_line_drag_target
 from phase_capture_storage import (
     allocate_capture_session_dir,
     generate_phase_analysis_notebook,
@@ -1161,48 +1162,15 @@ class ThorlabsCameraViewer(QObject):
         self.profile_update_counter = self.profile_update_interval - 1
         self.update_intensity_profile()
 
-    def distance_point_to_segment(self, p, a, b):
-        p = np.asarray(p, dtype=float)
-        a = np.asarray(a, dtype=float)
-        b = np.asarray(b, dtype=float)
-
-        ab = b - a
-        ab_len2 = np.dot(ab, ab)
-
-        if ab_len2 <= 1e-12:
-            return float(np.linalg.norm(p - a))
-
-        t = np.dot(p - a, ab) / ab_len2
-        t = max(0.0, min(1.0, t))
-
-        closest = a + t * ab
-        return float(np.linalg.norm(p - closest))
-
     def get_profile_drag_target(self, mouse_pos):
         line = self.get_profile_line_data()
-
         if line is None:
             return None
-
-        p1 = line[0]
-        p2 = line[-1]
-
-        d1 = float(np.linalg.norm(mouse_pos - p1))
-        d2 = float(np.linalg.norm(mouse_pos - p2))
-        d_line = self.distance_point_to_segment(mouse_pos, p1, p2)
-
-        threshold = self.profile_drag_threshold
-
-        if d1 <= threshold:
-            return "p1"
-
-        if d2 <= threshold:
-            return "p2"
-
-        if d_line <= threshold:
-            return "line"
-
-        return None
+        return get_line_drag_target(
+            mouse_position=mouse_pos,
+            line_vertices=line,
+            threshold=self.profile_drag_threshold,
+        )
 
     def move_profile_line_by_mouse(self, mouse_pos):
         line = self.get_profile_line_data()
