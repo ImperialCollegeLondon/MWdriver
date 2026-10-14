@@ -192,6 +192,7 @@ class PhaseSaveWorker(QObject):
                 session_dir,
                 self.roi_mask,
                 self.roi_params,
+                expected_mask_shape=frames.shape[1:],
             )
             roi_mask_path = roi_result["roi_mask_path"]
             roi_params_path = roi_result["roi_params_path"]

@@ -79,7 +79,7 @@ def validate_phase_frame_stack(frames, psi_algorithm_id=DEFAULT_ALGORITHM):
     return stack
 
 
-def save_roi_snapshots(session_dir, roi_mask, roi_params):
+def save_roi_snapshots(session_dir, roi_mask, roi_params, expected_mask_shape=None):
     mask_path = None
     params_path = None
     warnings = []
@@ -87,6 +87,14 @@ def save_roi_snapshots(session_dir, roi_mask, roi_params):
     if roi_mask is not None:
         try:
             mask = np.asarray(roi_mask, dtype=bool)
+            if (
+                expected_mask_shape is not None
+                and mask.shape != tuple(expected_mask_shape)
+            ):
+                raise ValueError(
+                    f"ROI mask shape {mask.shape} does not match frame shape "
+                    f"{tuple(expected_mask_shape)}."
+                )
             mask_path = os.path.join(session_dir, "roi_mask.npy")
             np.save(mask_path, mask)
         except Exception as error:
