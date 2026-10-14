@@ -89,6 +89,36 @@ class CameraContractTests(unittest.TestCase):
             self.assertIsNone(result.session_dir)
             self.assertFalse(save_dir.exists())
 
+    def test_phase_save_worker_rejects_malformed_frame_dimensions_before_allocating_session(self):
+        malformed_stacks = {
+            "non-2D frames": [np.ones((4, 5, 1), dtype=np.uint16) for _ in range(6)],
+            "inconsistent dimensions": [
+                np.ones((4, 5), dtype=np.uint16) for _ in range(5)
+            ] + [np.ones((3, 5), dtype=np.uint16)],
+        }
+
+        for case_name, frames in malformed_stacks.items():
+            with self.subTest(case=case_name):
+                with tempfile.TemporaryDirectory() as temporary_directory:
+                    save_dir = Path(temporary_directory, "captures")
+                    worker = camera.PhaseSaveWorker(
+                        frames=frames,
+                        save_dir=str(save_dir),
+                    )
+                    results = []
+                    worker.result_ready.connect(results.append)
+
+                    worker.run()
+
+                    result = results[0]
+                    self.assertFalse(result.save_success)
+                    self.assertIsNone(result.session_dir)
+                    self.assertFalse(save_dir.exists())
+                    self.assertRegex(
+                        result.error,
+                        "Expected phase frame stack|equally shaped 2D images",
+                    )
+
     def test_controller_applies_selected_layer_visibility_plan(self):
         camera_layer = SimpleNamespace(visible=True)
         roi_layer = SimpleNamespace(visible=True)

@@ -18,8 +18,9 @@ from phase_capture_storage import (
     save_phase_pngs,
     save_raw_phase_stack,
     save_roi_snapshots,
+    validate_phase_frame_stack,
 )
-from phase_psi import DEFAULT_ALGORITHM, get_algorithm
+from phase_psi import DEFAULT_ALGORITHM
 from recalibration import DEFAULT_RECALIBRATION_CONFIG
 
 
@@ -158,21 +159,17 @@ class PhaseSaveWorker(QObject):
         raw_stack_path = None
         metadata_path = None
         try:
-            expected_frame_count = len(
-                get_algorithm(self.psi_algorithm_id)["expected_phase_deg"]
+            frames = validate_phase_frame_stack(
+                self.frames,
+                self.psi_algorithm_id,
             )
-            if len(self.frames) != expected_frame_count:
-                raise ValueError(
-                    f"Expected {expected_frame_count} phase frames, "
-                    f"got {len(self.frames)}."
-                )
 
             os.makedirs(self.save_dir, exist_ok=True)
             print("====================================")
             print("Phase save worker started")
             print("Current working directory:", os.getcwd())
             print("Save directory:", self.save_dir)
-            print("Number of phase frames:", len(self.frames))
+            print("Number of phase frames:", len(frames))
             print("====================================")
 
             timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -210,7 +207,7 @@ class PhaseSaveWorker(QObject):
                 session_dir,
                 self.session_prefix,
                 timestamp,
-                self.frames,
+                frames,
             )
             print("Saved phase raw stack:", raw_stack_path)
             print("Raw stack shape:", stack.shape)
@@ -219,7 +216,7 @@ class PhaseSaveWorker(QObject):
             print("Raw stack max:", np.max(stack))
             self.status_ready.emit(f"Saved phase raw stack: {raw_stack_path}")
 
-            png_records = save_phase_pngs(session_dir, timestamp, self.frames)
+            png_records = save_phase_pngs(session_dir, timestamp, frames)
             png_paths = [record["path"] for record in png_records]
             for phase_index, record in enumerate(png_records):
                 print("Saved phase PNG:", record["path"])
@@ -234,7 +231,7 @@ class PhaseSaveWorker(QObject):
                 session_dir=session_dir,
                 timestamp=timestamp,
                 session_prefix=self.session_prefix,
-                frames=self.frames,
+                frames=frames,
                 phase_times=self.phase_times,
                 frame_timestamps=self.frame_timestamps,
                 png_paths=png_paths,

@@ -58,6 +58,27 @@ def raw_to_viewable_uint8(frame):
     return np.clip(frame_uint8, 0, 255).astype(np.uint8)
 
 
+def validate_phase_frame_stack(frames, psi_algorithm_id=DEFAULT_ALGORITHM):
+    expected_count = len(get_algorithm(psi_algorithm_id)["expected_phase_deg"])
+    try:
+        stack = np.asarray(frames)
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            "Phase frames must be equally shaped 2D images."
+        ) from error
+
+    if stack.ndim != 3:
+        raise ValueError(
+            "Expected phase frame stack with shape "
+            f"({expected_count}, H, W), got {stack.shape}."
+        )
+    if stack.shape[0] != expected_count:
+        raise ValueError(
+            f"Expected {expected_count} phase frames, got {stack.shape[0]}."
+        )
+    return stack
+
+
 def save_roi_snapshots(session_dir, roi_mask, roi_params):
     mask_path = None
     params_path = None
