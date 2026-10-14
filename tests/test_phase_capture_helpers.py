@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from phase_capture_frame_filter import (
     decide_framestamp_phase_slot,
     decide_native_phase_frame,
+    decide_phase_frame_assignment,
     select_queued_phase_slots,
     should_accept_phase_frame,
 )
@@ -20,6 +21,39 @@ from phase_capture_timestamps import (
 
 
 class PhaseCaptureFrameFilterTests(unittest.TestCase):
+    def test_phase_assignment_decision_rejects_inactive_invalid_and_occupied(self):
+        phase_frames = [None, object(), None]
+
+        inactive = decide_phase_frame_assignment(
+            False,
+            0,
+            phase_frames,
+            phase_count=3,
+        )
+        invalid = decide_phase_frame_assignment(
+            True,
+            3,
+            phase_frames,
+            phase_count=3,
+        )
+        duplicate = decide_phase_frame_assignment(
+            True,
+            1,
+            phase_frames,
+            phase_count=3,
+        )
+        accepted = decide_phase_frame_assignment(
+            True,
+            2,
+            phase_frames,
+            phase_count=3,
+        )
+
+        self.assertEqual(inactive.status, "inactive")
+        self.assertEqual(invalid.status, "invalid_index")
+        self.assertEqual(duplicate.status, "duplicate")
+        self.assertEqual(accepted.status, "accepted")
+
     def test_queued_frame_slots_are_empty_ordered_and_bounded(self):
         phase_frames = [None, object(), None, None, None, None]
 

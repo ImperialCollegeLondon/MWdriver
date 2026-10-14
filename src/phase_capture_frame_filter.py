@@ -15,6 +15,26 @@ class FramestampPhaseDecision:
     phase_index: int | None = None
 
 
+@dataclass(frozen=True)
+class PhaseFrameAssignmentDecision:
+    status: str
+
+
+def decide_phase_frame_assignment(
+    phase_capture_active,
+    phase_index,
+    phase_frames,
+    phase_count=6,
+):
+    if not phase_capture_active:
+        return PhaseFrameAssignmentDecision("inactive")
+    if phase_index < 0 or phase_index >= phase_count:
+        return PhaseFrameAssignmentDecision("invalid_index")
+    if phase_frames[phase_index] is not None:
+        return PhaseFrameAssignmentDecision("duplicate")
+    return PhaseFrameAssignmentDecision("accepted")
+
+
 def decide_framestamp_phase_slot(framestamp, phase_count=6):
     if framestamp is None:
         return FramestampPhaseDecision("missing")

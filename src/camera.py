@@ -46,6 +46,7 @@ from phase_capture_timestamps import (
 from phase_capture_frame_filter import (
     decide_framestamp_phase_slot,
     decide_native_phase_frame,
+    decide_phase_frame_assignment,
     select_queued_phase_slots,
     should_accept_phase_frame,
 )
@@ -2418,14 +2419,18 @@ class ThorlabsCameraViewer(QObject):
         1) serial marker arrives first, then camera frame arrives;
         2) camera frame arrives first, then serial marker arrives.
         """
-        if not self.phase_capture_active:
+        decision = decide_phase_frame_assignment(
+            self.phase_capture_active,
+            phase_index,
+            self.phase_capture_frames,
+            phase_count=PHASE_CAPTURE_COUNT,
+        )
+        if decision.status == "inactive":
             return False
-
-        if phase_index < 0 or phase_index >= PHASE_CAPTURE_COUNT:
+        if decision.status == "invalid_index":
             print("Invalid phase index for assignment:", phase_index)
             return False
-
-        if self.phase_capture_frames[phase_index] is not None:
+        if decision.status == "duplicate":
             print(f"Phase {phase_index} already has a frame, ignoring duplicate assignment.")
             return False
 
