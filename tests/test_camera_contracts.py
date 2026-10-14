@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import camera
+from application_bootstrap import run_application
 import check_measured_vs_expected_phase as phase_check
 import phase_analysis_new
 from phase_capture_process import PhaseCheckResult, run_phase_check
@@ -61,6 +62,34 @@ class FakeSignal:
 
 
 class CameraContractTests(unittest.TestCase):
+    def test_application_bootstrap_installs_cleanup_and_runs_event_loop(self):
+        class FakeEvent:
+            accepted = False
+
+            def accept(self):
+                self.accepted = True
+
+        class FakeViewer:
+            def __init__(self):
+                self.closed = False
+                self.viewer = SimpleNamespace(
+                    window=SimpleNamespace(_qt_window=SimpleNamespace())
+                )
+
+            def close(self):
+                self.closed = True
+
+        viewer = FakeViewer()
+        loop_calls = []
+        result = run_application(lambda: viewer, lambda: loop_calls.append(True))
+
+        self.assertIs(result, viewer)
+        self.assertEqual(loop_calls, [True])
+        event = FakeEvent()
+        viewer.viewer.window._qt_window.closeEvent(event)
+        self.assertTrue(viewer.closed)
+        self.assertTrue(event.accepted)
+
     def test_profile_controls_widget_has_expected_buttons(self):
         application = QApplication.instance() or QApplication([])
         widget, profile_button, clear_button = create_profile_controls()

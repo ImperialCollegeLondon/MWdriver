@@ -31,6 +31,7 @@ import numpy as np
 from thorlabs_native_camera import NativeThorlabsCamera
 
 import napari
+from application_bootstrap import run_application
 
 import matplotlib.pyplot as plt
 
@@ -4622,15 +4623,7 @@ class ThorlabsCameraViewer(QObject):
 
 
 def main():
-    camera_viewer = ThorlabsCameraViewer()
-
-    def close_event(event):
-        camera_viewer.close()
-        event.accept()
-
-    camera_viewer.viewer.window._qt_window.closeEvent = close_event
-
-    napari.run()
+    return run_application(ThorlabsCameraViewer, napari.run)
 
 
 if __name__ == "__main__":
