@@ -1,16 +1,11 @@
 import time
 import os
 import json
-import copy
 import ast
-import shutil
 
 os.environ["QT_API"] = "pyside6"
 
-from qtpy.QtCore import QObject, QThread, QTimer, Qt, QCoreApplication
-from qtpy.QtWidgets import (
-    QPushButton,
-)
+from qtpy.QtCore import QObject, QThread, QTimer
 
 import numpy as np
 
@@ -19,11 +14,8 @@ from thorlabs_native_camera import NativeThorlabsCamera
 import napari
 from application_bootstrap import run_application
 from phase_capture_controller import (
-    EXTERNAL_TRIGGER_EDGE,
     PHASE_CAPTURE_COUNT,
-    TRIANGLE_WAVE_SUPPLY_VOLTAGE,
     PhaseCaptureController,
-    triangle_wave_falling_edge_voltage,
 )
 from camera_runtime_controller import CameraRuntimeController, CameraWorker
 from camera_recalibration_controller import CameraRecalibrationController
@@ -39,45 +31,12 @@ from camera_phase_analysis_controller import (
     CameraPhaseAnalysisController,
     PHASE_ANALYSIS_SCRIPT,
 )
-
-from phase_capture_timestamps import (
-    build_phase_timestamp_payload,
-    normalize_frame_framestamp,
-)
-from phase_capture_frame_filter import (
-    decide_framestamp_phase_slot,
-    decide_native_phase_frame,
-    decide_phase_frame_assignment,
-    decide_triangle_done_action,
-    select_queued_phase_slots,
-    should_accept_phase_frame,
-)
-from phase_capture_storage import (
-    allocate_capture_session_dir,
-    PhaseSaveResult,
-    save_phase_capture_metadata,
-    save_phase_pngs,
-    save_raw_phase_stack,
-    save_roi_snapshots,
-)
-from phase_capture_process import run_phase_check
 from pico_serial_worker import PicoSerialWorker
 from manual_capture_worker import FrameSaveWorker
 from phase_capture_worker import PhaseSaveWorker
+from phase_capture_storage import PhaseSaveResult
 from recalibration import (
     DEFAULT_RECALIBRATION_CONFIG,
-    build_even_trigger_positions_ms,
-    compute_coarse_refined_positions_ms,
-    compute_iterative_refined_positions_ms as compute_iterative_refined_positions,
-    decide_incomplete_capture_action,
-    decide_verification_capture_action,
-    enforce_minimum_trigger_spacing_ms,
-    is_strict_recalibration_pass,
-    score_recalibration_candidate,
-    select_best_recalibration_candidate,
-    should_auto_restart_recalibration as should_auto_restart_candidate,
-    validate_coarse_measurement,
-    validate_trigger_positions_ms as validate_recalibration_trigger_positions_ms,
 )
 from phase_psi import (
     DEFAULT_ALGORITHM as DEFAULT_PSI_ALGORITHM,
@@ -132,7 +91,6 @@ RECALIBRATION_TRIGGER_UPDATE_ACK_TIMEOUT_S = 1.5
 # Pico drives GP15 with PWM at logic-level amplitude; the falling edge duty
 # ramps linearly from MAX_DUTY down to 0 across the configured falling edge,
 # mirroring build_falling_duty_table() in main.py on the Pico.
-
 
 
 class ThorlabsCameraViewer(
@@ -415,59 +373,6 @@ class ThorlabsCameraViewer(
         except Exception as e:
             print("Viewer-level profile mouse drag callback warning:", e)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     def print_pico_message(self, text):
         print(text)
 
@@ -489,19 +394,6 @@ class ThorlabsCameraViewer(
 
         if "TRIGGER_POSITIONS_UPDATE_ERROR:" in text:
             self.last_trigger_update_error_text = text
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     def request_pico_phase_capture_from_button(self):
         """
@@ -580,26 +472,6 @@ class ThorlabsCameraViewer(
         # so skip the phase-vs-voltage plot rather than showing wrong voltages.
         self.last_capture_trigger_positions_ms = None
         self.pico_worker.request_start_phase_from_gui()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     def request_manual_capture(self):
         print("====================================")
