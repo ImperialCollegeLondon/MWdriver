@@ -1,8 +1,6 @@
-import ast
 import sys
 import unittest
 from pathlib import Path
-from types import MethodType
 
 import numpy as np
 
@@ -10,13 +8,75 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from recalibration import (
+    build_even_trigger_positions_ms,
+    compute_coarse_refined_positions_ms,
+    enforce_minimum_trigger_spacing_ms,
     is_strict_recalibration_pass,
+    score_recalibration_candidate,
+    should_auto_restart_recalibration,
     validate_coarse_measurement,
     validate_trigger_positions_ms,
 )
 
 
 class RecalibrationValidationTests(unittest.TestCase):
+    def test_even_trigger_positions_respect_guard_bounds(self):
+        self.assertEqual(
+            build_even_trigger_positions_ms(6, 100, 549),
+            [100, 190, 280, 369, 459, 549],
+        )
+
+    def test_spacing_enforcement_respects_camera_minimum_and_bounds(self):
+        positions = enforce_minimum_trigger_spacing_ms(
+            [100, 110, 120, 130, 140, 150],
+            frame_count=6,
+            minimum_spacing_ms=25,
+            lower_bound_ms=100,
+            upper_bound_ms=549,
+        )
+        self.assertEqual(positions, [100, 125, 150, 175, 200, 225])
+        with self.assertRaisesRegex(ValueError, "need 500 ms"):
+            enforce_minimum_trigger_spacing_ms(
+                [100, 110, 120, 130, 140, 150],
+                frame_count=6,
+                minimum_spacing_ms=100,
+                lower_bound_ms=100,
+                upper_bound_ms=549,
+            )
+
+    def test_candidate_scoring_normalises_to_first_frame_and_orders_score(self):
+        candidate = score_recalibration_candidate(
+            session_dir="session",
+            measured_phase_deg=[15, 107, 203, 307, 410, 515],
+            target_phase_deg=[0, 90, 180, 270, 360, 450],
+            trigger_positions_ms=[100, 190, 280, 370, 460, 550],
+            tolerance_deg=5.0,
+            retry_error_limit_deg=10.0,
+        )
+
+        self.assertEqual(candidate["phase_error_deg"], [0, 2, 8, 22, 35, 50])
+        self.assertEqual(candidate["count_error_over_5"], 4)
+        self.assertEqual(candidate["count_error_over_10"], 3)
+        self.assertEqual(candidate["score"][:3], (3, 50.0, 4))
+
+    def test_auto_restart_thresholds(self):
+        self.assertTrue(
+            should_auto_restart_recalibration(
+                {"count_error_over_5": 2, "count_error_over_10": 1}, 2, 3
+            )
+        )
+        self.assertTrue(
+            should_auto_restart_recalibration(
+                {"count_error_over_5": 3, "count_error_over_10": 0}, 2, 3
+            )
+        )
+        self.assertFalse(
+            should_auto_restart_recalibration(
+                {"count_error_over_5": 2, "count_error_over_10": 0}, 2, 3
+            )
+        )
+        self.assertFalse(should_auto_restart_recalibration(None, 2, 3))
+
     def validate_positions(self, positions):
         return validate_trigger_positions_ms(
             positions,
@@ -80,55 +140,20 @@ class RecalibrationValidationTests(unittest.TestCase):
             is_strict_recalibration_pass([0, 1, -2, 3, -4, float("nan")], 5.0)
         )
 
-    def test_coarse_solver_accepts_list_returned_by_validator(self):
-        camera_path = Path(__file__).resolve().parents[1] / "src" / "camera.py"
-        camera_tree = ast.parse(camera_path.read_text(encoding="utf-8"))
-        viewer_class = next(
-            node for node in camera_tree.body
-            if isinstance(node, ast.ClassDef)
-            and node.name == "ThorlabsCameraViewer"
-        )
-        solver_node = next(
-            node for node in viewer_class.body
-            if isinstance(node, ast.FunctionDef)
-            and node.name == "compute_recalibrated_trigger_positions_ms"
-        )
-        solver_module = ast.Module(body=[solver_node], type_ignores=[])
-        solver_namespace = {
-            "np": np,
-            "PHASE_CAPTURE_COUNT": 6,
-            "RECALIBRATION_EDGE_GUARD_MS": 100,
-            "RECALIBRATION_FALLING_EDGE_MS": 650,
-        }
-        exec(compile(solver_module, str(camera_path), "exec"), solver_namespace)
-
-        class FakeViewer:
-            def validate_coarse_recalibration_measurement(self, values):
-                return validate_coarse_measurement(
-                    values,
-                    frame_count=6,
-                    minimum_span_deg=220.0,
-                    minimum_total_abs_step_deg=220.0,
-                    minimum_max_step_deg=35.0,
-                    maximum_backtrack_deg=25.0,
-                )
-
-            def get_recalibration_target_phase_deg(self):
-                return np.asarray([0, 90, 180, 270, 360, 450], dtype=np.float64)
-
-            def enforce_minimum_trigger_spacing(self, positions):
-                return positions
-
-            def validate_trigger_positions_ms(self, positions):
-                return positions
-
-        solver = MethodType(
-            solver_namespace["compute_recalibrated_trigger_positions_ms"],
-            FakeViewer(),
-        )
-        result = solver(
+    def test_coarse_solver_accepts_list_returned_by_validation(self):
+        result = compute_coarse_refined_positions_ms(
             coarse_positions_ms=[100, 190, 280, 369, 459, 549],
             measured_phase_deg=[0, 102, 201, 305, 403, 535],
+            target_phase_deg=[0, 90, 180, 270, 360, 450],
+            frame_count=6,
+            falling_edge_ms=650,
+            edge_guard_ms=100,
+            minimum_spacing_ms=25,
+            validation_spacing_ms=6,
+            minimum_span_deg=220.0,
+            minimum_total_abs_step_deg=220.0,
+            minimum_max_step_deg=35.0,
+            maximum_backtrack_deg=25.0,
         )
 
         self.assertEqual(len(result), 6)

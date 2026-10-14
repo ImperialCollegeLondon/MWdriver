@@ -2,6 +2,235 @@
 
 import math
 
+import numpy as np
+
+
+def build_even_trigger_positions_ms(frame_count, lower_bound_ms, upper_bound_ms):
+    if frame_count < 2:
+        raise ValueError("At least two trigger positions are required.")
+    if upper_bound_ms <= lower_bound_ms:
+        raise ValueError("Upper trigger bound must exceed lower trigger bound.")
+
+    return [
+        int(round(value))
+        for value in np.linspace(lower_bound_ms, upper_bound_ms, frame_count)
+    ]
+
+
+def enforce_minimum_trigger_spacing_ms(
+    trigger_positions_ms,
+    frame_count,
+    minimum_spacing_ms,
+    lower_bound_ms,
+    upper_bound_ms,
+):
+    if len(trigger_positions_ms) != frame_count:
+        raise ValueError(f"Exactly {frame_count} trigger positions are required.")
+
+    required_span = minimum_spacing_ms * (frame_count - 1)
+    if required_span > upper_bound_ms - lower_bound_ms:
+        raise ValueError(
+            f"{frame_count} camera-safe triggers need {required_span:g} ms, "
+            f"but the calibration window is only "
+            f"{upper_bound_ms - lower_bound_ms:g} ms. "
+            "Reduce exposure or use a longer waveform."
+        )
+
+    adjusted = [float(value) for value in trigger_positions_ms]
+
+    for index in range(1, frame_count):
+        minimum_allowed = adjusted[index - 1] + minimum_spacing_ms
+        if adjusted[index] < minimum_allowed:
+            adjusted[index] = minimum_allowed
+
+    if adjusted[-1] > upper_bound_ms:
+        adjusted[-1] = upper_bound_ms
+        for index in range(frame_count - 2, -1, -1):
+            maximum_allowed = adjusted[index + 1] - minimum_spacing_ms
+            if adjusted[index] > maximum_allowed:
+                adjusted[index] = maximum_allowed
+
+    if adjusted[0] < lower_bound_ms:
+        adjusted[0] = lower_bound_ms
+        for index in range(1, frame_count):
+            minimum_allowed = adjusted[index - 1] + minimum_spacing_ms
+            if adjusted[index] < minimum_allowed:
+                adjusted[index] = minimum_allowed
+
+    return [int(round(value)) for value in adjusted]
+
+
+def compute_coarse_refined_positions_ms(
+    coarse_positions_ms,
+    measured_phase_deg,
+    target_phase_deg,
+    *,
+    frame_count,
+    falling_edge_ms,
+    edge_guard_ms,
+    minimum_spacing_ms,
+    validation_spacing_ms,
+    minimum_span_deg,
+    minimum_total_abs_step_deg,
+    minimum_max_step_deg,
+    maximum_backtrack_deg,
+):
+    coarse_positions = np.asarray(coarse_positions_ms, dtype=np.float64)
+    measured = np.asarray(measured_phase_deg, dtype=np.float64)
+    target_phase = np.asarray(target_phase_deg, dtype=np.float64)
+
+    if coarse_positions.shape != (frame_count,):
+        raise ValueError(
+            f"Coarse trigger count mismatch: expected {frame_count}, "
+            f"got {coarse_positions.shape[0] if coarse_positions.ndim else 0}"
+        )
+    if measured.shape != (frame_count,):
+        raise ValueError(
+            f"Measured phase count mismatch: expected {frame_count}, "
+            f"got {measured.shape[0] if measured.ndim else 0}"
+        )
+
+    measured = np.asarray(
+        validate_coarse_measurement(
+            measured,
+            frame_count=frame_count,
+            minimum_span_deg=minimum_span_deg,
+            minimum_total_abs_step_deg=minimum_total_abs_step_deg,
+            minimum_max_step_deg=minimum_max_step_deg,
+            maximum_backtrack_deg=maximum_backtrack_deg,
+        ),
+        dtype=np.float64,
+    )
+
+    for index in range(1, frame_count):
+        if measured[index] <= measured[index - 1]:
+            measured[index] = measured[index - 1] + 1e-3
+
+    if measured[-1] < float(target_phase[-1]):
+        raise ValueError(
+            "Coarse calibration span is too short: "
+            f"last measured phase {measured[-1]:.2f} deg"
+        )
+
+    upper_guarded_bound = falling_edge_ms - 1 - edge_guard_ms
+    target_positions = np.interp(target_phase, measured, coarse_positions)
+    target_positions = np.clip(
+        target_positions,
+        edge_guard_ms,
+        upper_guarded_bound,
+    )
+    target_positions = enforce_minimum_trigger_spacing_ms(
+        [int(round(value)) for value in target_positions],
+        frame_count=frame_count,
+        minimum_spacing_ms=minimum_spacing_ms,
+        lower_bound_ms=edge_guard_ms,
+        upper_bound_ms=upper_guarded_bound,
+    )
+
+    return validate_trigger_positions_ms(
+        target_positions,
+        frame_count=frame_count,
+        falling_edge_ms=falling_edge_ms,
+        minimum_spacing_ms=validation_spacing_ms,
+    )
+
+
+def compute_iterative_refined_positions_ms(
+    current_positions_ms,
+    measured_phase_deg,
+    target_phase_deg,
+    *,
+    frame_count,
+    falling_edge_ms,
+    edge_guard_ms,
+    minimum_spacing_ms,
+    validation_spacing_ms,
+    retry_error_limit_deg,
+    regular_damping,
+    regular_max_time_step_ms,
+    large_error_damping,
+    large_error_max_time_step_ms,
+):
+    current_positions = np.asarray(current_positions_ms, dtype=np.float64)
+    measured = np.asarray(measured_phase_deg, dtype=np.float64)
+    target_phase = np.asarray(target_phase_deg, dtype=np.float64)
+
+    if current_positions.shape != (frame_count,):
+        raise ValueError("Current trigger count mismatch for iterative refine.")
+    if measured.shape != (frame_count,):
+        raise ValueError("Measured phase count mismatch for iterative refine.")
+
+    measured = measured - measured[0]
+    if not np.all(np.isfinite(measured)):
+        raise ValueError("Measured phase contains NaN or Inf during refinement.")
+
+    monotonic_phase = measured.copy()
+    for index in range(1, frame_count):
+        monotonic_phase[index] = max(
+            monotonic_phase[index],
+            monotonic_phase[index - 1] + 1e-3,
+        )
+
+    desired_positions = np.interp(
+        target_phase,
+        monotonic_phase,
+        current_positions,
+    )
+    first_slope = (
+        (current_positions[1] - current_positions[0])
+        / (monotonic_phase[1] - monotonic_phase[0])
+    )
+    last_slope = (
+        (current_positions[-1] - current_positions[-2])
+        / (monotonic_phase[-1] - monotonic_phase[-2])
+    )
+
+    for index, target_value in enumerate(target_phase):
+        if target_value < monotonic_phase[0]:
+            desired_positions[index] = (
+                current_positions[0]
+                + (target_value - monotonic_phase[0]) * first_slope
+            )
+        elif target_value > monotonic_phase[-1]:
+            desired_positions[index] = (
+                current_positions[-1]
+                + (target_value - monotonic_phase[-1]) * last_slope
+            )
+
+    max_abs_error = float(np.max(np.abs(measured - target_phase)))
+    if max_abs_error > retry_error_limit_deg:
+        damping = large_error_damping
+        max_time_step_ms = large_error_max_time_step_ms
+    else:
+        damping = regular_damping
+        max_time_step_ms = regular_max_time_step_ms
+
+    updated = current_positions + damping * (desired_positions - current_positions)
+    updated[0] = current_positions[0]
+    updated = current_positions + np.clip(
+        updated - current_positions,
+        -max_time_step_ms,
+        max_time_step_ms,
+    )
+
+    lower_bound = float(edge_guard_ms)
+    upper_bound = float(falling_edge_ms - 1 - edge_guard_ms)
+    updated[0] = float(np.clip(updated[0], lower_bound, upper_bound))
+    rounded = [int(round(value)) for value in updated]
+    rounded = enforce_minimum_trigger_spacing_ms(
+        rounded,
+        frame_count=frame_count,
+        minimum_spacing_ms=minimum_spacing_ms,
+        lower_bound_ms=lower_bound,
+        upper_bound_ms=upper_bound,
+    )
+
+    return validate_trigger_positions_ms(
+        rounded,
+        frame_count=frame_count,
+        falling_edge_ms=falling_edge_ms,
+        minimum_spacing_ms=validation_spacing_ms,
+    )
 
 def validate_trigger_positions_ms(
     trigger_positions_ms,
@@ -104,3 +333,70 @@ def is_strict_recalibration_pass(phase_error_deg, tolerance_deg):
         math.isfinite(error) and abs(error) <= tolerance_deg
         for error in errors
     )
+
+
+def score_recalibration_candidate(
+    session_dir,
+    measured_phase_deg,
+    target_phase_deg,
+    trigger_positions_ms,
+    tolerance_deg,
+    retry_error_limit_deg,
+):
+    measured = np.asarray(measured_phase_deg, dtype=np.float64)
+    target_phase = np.asarray(target_phase_deg, dtype=np.float64)
+    if measured.ndim != 1 or measured.size != target_phase.size or measured.size == 0:
+        raise ValueError(
+            "Verification measurement and target must have the same non-zero length."
+        )
+    if not np.all(np.isfinite(measured)) or not np.all(np.isfinite(target_phase)):
+        raise ValueError("Verification measurement or target contains NaN or Inf.")
+
+    measured_for_error = measured - measured[0]
+    phase_error = measured_for_error - target_phase
+    absolute_error = np.abs(phase_error)
+    count_error_over_tolerance = int(np.sum(absolute_error > tolerance_deg))
+    count_error_over_retry_limit = int(
+        np.sum(absolute_error > retry_error_limit_deg)
+    )
+    max_abs_error = float(np.max(absolute_error))
+    rms_error = float(np.sqrt(np.mean(np.square(phase_error))))
+    mae_error = float(np.mean(absolute_error))
+
+    return {
+        "session_dir": session_dir,
+        "measured_phase_deg": measured.tolist(),
+        "phase_error_deg": phase_error.tolist(),
+        "trigger_positions_ms": list(trigger_positions_ms),
+        "count_error_over_5": count_error_over_tolerance,
+        "count_error_over_10": count_error_over_retry_limit,
+        "max_abs_error": max_abs_error,
+        "rms_error": rms_error,
+        "mae_error": mae_error,
+        "score": (
+            count_error_over_retry_limit,
+            max_abs_error,
+            count_error_over_tolerance,
+            rms_error,
+            mae_error,
+        ),
+    }
+
+
+def should_auto_restart_recalibration(
+    candidate,
+    minimum_error_over_5_points,
+    minimum_error_over_5_only_points,
+):
+    if not isinstance(candidate, dict):
+        return False
+
+    count_error_over_10 = int(candidate.get("count_error_over_10", 0))
+    count_error_over_5 = int(candidate.get("count_error_over_5", 0))
+    if (
+        count_error_over_10 > 0
+        and count_error_over_5 >= minimum_error_over_5_points
+    ):
+        return True
+
+    return count_error_over_5 >= minimum_error_over_5_only_points

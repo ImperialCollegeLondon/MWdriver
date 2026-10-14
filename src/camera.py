@@ -43,7 +43,13 @@ from phase_capture_timestamps import (
 )
 from phase_capture_frame_filter import should_accept_phase_frame
 from recalibration import (
+    build_even_trigger_positions_ms,
+    compute_coarse_refined_positions_ms,
+    compute_iterative_refined_positions_ms as compute_iterative_refined_positions,
+    enforce_minimum_trigger_spacing_ms,
     is_strict_recalibration_pass,
+    score_recalibration_candidate,
+    should_auto_restart_recalibration as should_auto_restart_candidate,
     validate_coarse_measurement,
     validate_trigger_positions_ms as validate_recalibration_trigger_positions_ms,
 )
@@ -4682,24 +4688,16 @@ class ThorlabsCameraViewer(QObject):
         camera arm latency and waveform boundary transitions can increase
         missing-frame risk.
         """
-        start_ms = float(RECALIBRATION_EDGE_GUARD_MS)
-        end_ms = float(
-            RECALIBRATION_FALLING_EDGE_MS
-            - 1
-            - RECALIBRATION_EDGE_GUARD_MS
+        positions = build_even_trigger_positions_ms(
+            frame_count=PHASE_CAPTURE_COUNT,
+            lower_bound_ms=RECALIBRATION_EDGE_GUARD_MS,
+            upper_bound_ms=(
+                RECALIBRATION_FALLING_EDGE_MS
+                - 1
+                - RECALIBRATION_EDGE_GUARD_MS
+            ),
         )
-
-        if end_ms <= start_ms:
-            raise ValueError(
-                "Invalid edge-guard configuration for recalibration."
-            )
-
-        positions = np.linspace(
-            start_ms,
-            end_ms,
-            PHASE_CAPTURE_COUNT,
-        )
-        return [int(round(value)) for value in positions]
+        return self.validate_trigger_positions_ms(positions)
 
     def validate_trigger_positions_ms(self, trigger_positions_ms):
         return validate_recalibration_trigger_positions_ms(
@@ -4725,114 +4723,46 @@ class ThorlabsCameraViewer(QObject):
         """
         if min_spacing_ms is None:
             min_spacing_ms = RECALIBRATION_SAFE_TRIGGER_SPACING_MS
-
-        min_spacing_ms = max(
+        minimum_spacing_ms = max(
             min_spacing_ms,
             self.cam.get_recommended_trigger_spacing_ms(exposure_s=self.exposure_s),
         )
-
-        lower_bound = float(RECALIBRATION_EDGE_GUARD_MS)
-        upper_bound = float(
+        lower_bound_ms = float(RECALIBRATION_EDGE_GUARD_MS)
+        upper_bound_ms = float(
             RECALIBRATION_FALLING_EDGE_MS - 1 - RECALIBRATION_EDGE_GUARD_MS
         )
 
-        required_span = min_spacing_ms * (PHASE_CAPTURE_COUNT - 1)
-
-        if required_span > (upper_bound - lower_bound):
-            raise ValueError(
-                f"Six camera-safe triggers need {required_span:g} ms, "
-                f"but the calibration window is only {upper_bound - lower_bound:g} ms. "
-                "Reduce exposure or use a longer waveform."
-            )
-
-        adjusted = [float(value) for value in trigger_positions_ms]
-
-        # Forward pass: push later points forward when too close to the previous one.
-        for index in range(1, PHASE_CAPTURE_COUNT):
-            min_allowed = adjusted[index - 1] + min_spacing_ms
-            if adjusted[index] < min_allowed:
-                adjusted[index] = min_allowed
-
-        # Backward pass: pull points back if the forward pass pushed the tail
-        # past the upper bound.
-        if adjusted[-1] > upper_bound:
-            adjusted[-1] = upper_bound
-            for index in range(PHASE_CAPTURE_COUNT - 2, -1, -1):
-                max_allowed = adjusted[index + 1] - min_spacing_ms
-                if adjusted[index] > max_allowed:
-                    adjusted[index] = max_allowed
-
-        # Final forward pass in case the backward pass pushed the head below
-        # the lower bound.
-        if adjusted[0] < lower_bound:
-            adjusted[0] = lower_bound
-            for index in range(1, PHASE_CAPTURE_COUNT):
-                min_allowed = adjusted[index - 1] + min_spacing_ms
-                if adjusted[index] < min_allowed:
-                    adjusted[index] = min_allowed
-
-        return [int(round(value)) for value in adjusted]
+        return enforce_minimum_trigger_spacing_ms(
+            trigger_positions_ms,
+            frame_count=PHASE_CAPTURE_COUNT,
+            minimum_spacing_ms=minimum_spacing_ms,
+            lower_bound_ms=lower_bound_ms,
+            upper_bound_ms=upper_bound_ms,
+        )
 
     def compute_recalibrated_trigger_positions_ms(
         self,
         coarse_positions_ms,
         measured_phase_deg,
     ):
-        coarse_positions = np.asarray(
+        minimum_spacing_ms = max(
+            RECALIBRATION_SAFE_TRIGGER_SPACING_MS,
+            self.cam.get_recommended_trigger_spacing_ms(exposure_s=self.exposure_s),
+        )
+        return compute_coarse_refined_positions_ms(
             coarse_positions_ms,
-            dtype=np.float64,
-        )
-
-        measured = np.asarray(
             measured_phase_deg,
-            dtype=np.float64,
+            self.get_recalibration_target_phase_deg(),
+            frame_count=PHASE_CAPTURE_COUNT,
+            falling_edge_ms=RECALIBRATION_FALLING_EDGE_MS,
+            edge_guard_ms=RECALIBRATION_EDGE_GUARD_MS,
+            minimum_spacing_ms=minimum_spacing_ms,
+            validation_spacing_ms=RECALIBRATION_MIN_TRIGGER_SPACING_MS,
+            minimum_span_deg=RECALIBRATION_MIN_COARSE_SPAN_DEG,
+            minimum_total_abs_step_deg=RECALIBRATION_MIN_COARSE_TOTAL_ABS_STEP_DEG,
+            minimum_max_step_deg=RECALIBRATION_MIN_COARSE_MAX_STEP_DEG,
+            maximum_backtrack_deg=RECALIBRATION_MAX_COARSE_BACKTRACK_DEG,
         )
-
-        if measured.shape[0] != PHASE_CAPTURE_COUNT:
-            raise ValueError(
-                "Measured phase count mismatch: "
-                f"expected {PHASE_CAPTURE_COUNT}, got {measured.shape[0]}"
-            )
-
-        measured = np.asarray(
-            self.validate_coarse_recalibration_measurement(measured),
-            dtype=np.float64,
-        )
-
-        # Allow only tiny local backtracking from noise before interpolation.
-        for index in range(1, measured.shape[0]):
-            if measured[index] <= measured[index - 1]:
-                measured[index] = measured[index - 1] + 1e-3
-
-        target_phase_deg = self.get_recalibration_target_phase_deg()
-        if measured[-1] < float(target_phase_deg[-1]):
-            raise ValueError(
-                "Coarse calibration span is too short: "
-                f"last measured phase {measured[-1]:.2f} deg"
-            )
-
-        target_positions = np.interp(
-            target_phase_deg,
-            measured,
-            coarse_positions,
-        )
-
-        # Keep refined points away from the waveform boundaries.
-        target_positions = np.clip(
-            target_positions,
-            RECALIBRATION_EDGE_GUARD_MS,
-            RECALIBRATION_FALLING_EDGE_MS - 1 - RECALIBRATION_EDGE_GUARD_MS,
-        )
-
-        # Steep regions of the measured phase curve can otherwise collapse two
-        # adjacent target points close enough to overlap camera exposure/readout.
-        target_positions = self.enforce_minimum_trigger_spacing(
-            [int(round(value)) for value in target_positions]
-        )
-
-        target_positions = self.validate_trigger_positions_ms(target_positions)
-
-        return target_positions
 
     def validate_coarse_recalibration_measurement(self, measured_phase_deg):
         return validate_coarse_measurement(
@@ -5012,124 +4942,25 @@ class ThorlabsCameraViewer(QObject):
         current_positions_ms,
         measured_phase_deg,
     ):
-        current_positions = np.asarray(
+        minimum_spacing_ms = max(
+            RECALIBRATION_SAFE_TRIGGER_SPACING_MS,
+            self.cam.get_recommended_trigger_spacing_ms(exposure_s=self.exposure_s),
+        )
+        return compute_iterative_refined_positions(
             current_positions_ms,
-            dtype=np.float64,
-        )
-
-        measured = np.asarray(
             measured_phase_deg,
-            dtype=np.float64,
+            self.get_recalibration_target_phase_deg(),
+            frame_count=PHASE_CAPTURE_COUNT,
+            falling_edge_ms=RECALIBRATION_FALLING_EDGE_MS,
+            edge_guard_ms=RECALIBRATION_EDGE_GUARD_MS,
+            minimum_spacing_ms=minimum_spacing_ms,
+            validation_spacing_ms=RECALIBRATION_MIN_TRIGGER_SPACING_MS,
+            retry_error_limit_deg=RECALIBRATION_RETRY_ERROR_LIMIT_DEG,
+            regular_damping=RECALIBRATION_TIME_UPDATE_DAMPING,
+            regular_max_time_step_ms=RECALIBRATION_MAX_TIME_STEP_MS,
+            large_error_damping=RECALIBRATION_LARGE_ERROR_DAMPING,
+            large_error_max_time_step_ms=RECALIBRATION_LARGE_ERROR_TIME_STEP_MS,
         )
-
-        if current_positions.shape[0] != PHASE_CAPTURE_COUNT:
-            raise ValueError(
-                "Current trigger count mismatch for iterative refine."
-            )
-
-        if measured.shape[0] != PHASE_CAPTURE_COUNT:
-            raise ValueError(
-                "Measured phase count mismatch for iterative refine."
-            )
-
-        measured = measured - measured[0]
-        if not np.all(np.isfinite(measured)):
-            raise ValueError("Measured phase contains NaN or Inf during refinement.")
-
-        # Build one monotonic phase-to-time map from the whole six-point curve.
-        # This is more stable than correcting each point from a local slope.
-        monotonic_phase = measured.copy()
-        for index in range(1, PHASE_CAPTURE_COUNT):
-            monotonic_phase[index] = max(
-                monotonic_phase[index],
-                monotonic_phase[index - 1] + 1e-3,
-            )
-
-        target_phase_deg = self.get_recalibration_target_phase_deg()
-        desired_positions = np.interp(
-            target_phase_deg,
-            monotonic_phase,
-            current_positions,
-        )
-
-        # np.interp clamps outside the measured range.  Linear endpoint
-        # extrapolation allows a later target, such as 300 deg, to recover
-        # when the current final point is still below that phase.
-        first_slope = (
-            (current_positions[1] - current_positions[0])
-            /
-            (monotonic_phase[1] - monotonic_phase[0])
-        )
-        last_slope = (
-            (current_positions[-1] - current_positions[-2])
-            /
-            (monotonic_phase[-1] - monotonic_phase[-2])
-        )
-
-        for index, target_phase in enumerate(target_phase_deg):
-            if target_phase < monotonic_phase[0]:
-                desired_positions[index] = (
-                    current_positions[0]
-                    +
-                    (target_phase - monotonic_phase[0]) * first_slope
-                )
-            elif target_phase > monotonic_phase[-1]:
-                desired_positions[index] = (
-                    current_positions[-1]
-                    +
-                    (target_phase - monotonic_phase[-1]) * last_slope
-                )
-
-        max_abs_error = float(
-            np.max(
-                np.abs(
-                    measured - target_phase_deg
-                )
-            )
-        )
-
-        if max_abs_error > RECALIBRATION_RETRY_ERROR_LIMIT_DEG:
-            damping = RECALIBRATION_LARGE_ERROR_DAMPING
-            max_time_step_ms = RECALIBRATION_LARGE_ERROR_TIME_STEP_MS
-        else:
-            damping = RECALIBRATION_TIME_UPDATE_DAMPING
-            max_time_step_ms = RECALIBRATION_MAX_TIME_STEP_MS
-
-        updated = current_positions + damping * (
-            desired_positions - current_positions
-        )
-        updated[0] = current_positions[0]
-
-        time_changes = np.clip(
-            updated - current_positions,
-            -max_time_step_ms,
-            max_time_step_ms,
-        )
-        updated = current_positions + time_changes
-
-        print("Iterative refinement measured phase:", measured.tolist())
-        print("Iterative refinement desired positions:", desired_positions.tolist())
-        print(
-            "Iterative refinement settings:",
-            "damping=", damping,
-            "max_time_step_ms=", max_time_step_ms,
-        )
-
-        min_bound = float(RECALIBRATION_EDGE_GUARD_MS)
-        max_bound = float(
-            RECALIBRATION_FALLING_EDGE_MS - 1 - RECALIBRATION_EDGE_GUARD_MS
-        )
-
-        updated[0] = float(np.clip(updated[0], min_bound, max_bound))
-
-        rounded = [int(round(value)) for value in updated]
-
-        # Damped refinement steps can still leave two points close together
-        # in steep phase regions; spread them to a hardware-safe spacing
-        # instead of letting a marginal gap cause repeatable dropped frames.
-        rounded = self.enforce_minimum_trigger_spacing(rounded)
-
-        return self.validate_trigger_positions_ms(rounded)
 
     def abort_recalibration(self, status_text):
         self.recalibration_active = False
@@ -5150,21 +4981,15 @@ class ThorlabsCameraViewer(QObject):
         self.phase_label.setText("Phase Capture: Recalibration aborted")
 
     def should_auto_restart_recalibration(self, best_candidate):
-        if not isinstance(best_candidate, dict):
-            return False
-
-        count_error_over_10 = int(best_candidate.get("count_error_over_10", 0))
-        count_error_over_5 = int(best_candidate.get("count_error_over_5", 0))
-
-        if (
-            count_error_over_10 > 0
-            and count_error_over_5 >= RECALIBRATION_AUTO_RESTART_MIN_ERROR_OVER_5_POINTS
-        ):
-            return True
-
-        # Even with no point over 10 deg, too many points missing the +/-5 deg
-        # band means the best-of-four result is still not good enough to keep.
-        return count_error_over_5 >= RECALIBRATION_AUTO_RESTART_MIN_ERROR_OVER_5_ONLY_POINTS
+        return should_auto_restart_candidate(
+            best_candidate,
+            minimum_error_over_5_points=(
+                RECALIBRATION_AUTO_RESTART_MIN_ERROR_OVER_5_POINTS
+            ),
+            minimum_error_over_5_only_points=(
+                RECALIBRATION_AUTO_RESTART_MIN_ERROR_OVER_5_ONLY_POINTS
+            ),
+        )
 
     def purge_current_recalibration_session_artifacts(self):
         candidate_dirs = []
@@ -5271,48 +5096,14 @@ class ThorlabsCameraViewer(QObject):
                 f"Status: Recalibration verification retry failed: {error}"
             )
     def build_recalibration_candidate(self, session_dir, measured_phase_deg):
-        measured = np.asarray(measured_phase_deg, dtype=np.float64)
-        if measured.shape != (PHASE_CAPTURE_COUNT,):
-            raise ValueError(
-                "Verification measurement must contain exactly six phase values."
-            )
-
-        measured_for_error = measured - measured[0]
-        phase_error = (
-            measured_for_error - self.get_recalibration_target_phase_deg()
+        return score_recalibration_candidate(
+            session_dir=session_dir,
+            measured_phase_deg=measured_phase_deg,
+            target_phase_deg=self.get_recalibration_target_phase_deg(),
+            trigger_positions_ms=self.recalibration_current_positions_ms,
+            tolerance_deg=RECALIBRATION_ERROR_TOLERANCE_DEG,
+            retry_error_limit_deg=RECALIBRATION_RETRY_ERROR_LIMIT_DEG,
         )
-        abs_phase_error = np.abs(phase_error)
-
-        count_error_over_5 = int(
-            np.sum(abs_phase_error > RECALIBRATION_ERROR_TOLERANCE_DEG)
-        )
-        count_error_over_10 = int(
-            np.sum(abs_phase_error > RECALIBRATION_RETRY_ERROR_LIMIT_DEG)
-        )
-        max_abs_error = float(np.max(abs_phase_error))
-        rms_error = float(np.sqrt(np.mean(np.square(phase_error))))
-        mae_error = float(np.mean(abs_phase_error))
-
-        return {
-            "session_dir": session_dir,
-            "measured_phase_deg": measured.tolist(),
-            "phase_error_deg": phase_error.tolist(),
-            "trigger_positions_ms": list(
-                self.recalibration_current_positions_ms
-            ),
-            "count_error_over_5": count_error_over_5,
-            "count_error_over_10": count_error_over_10,
-            "max_abs_error": max_abs_error,
-            "rms_error": rms_error,
-            "mae_error": mae_error,
-            "score": (
-                count_error_over_10,
-                max_abs_error,
-                count_error_over_5,
-                rms_error,
-                mae_error,
-            ),
-        }
 
     def keep_only_recalibration_candidate(self, selected_candidate):
         selected_session_dir = os.path.abspath(selected_candidate["session_dir"])
