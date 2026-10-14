@@ -1077,6 +1077,35 @@ class CameraContractTests(unittest.TestCase):
             self.assertIn("png disk failure", result.error)
             self.assertTrue(Path(result.raw_stack_path).is_file())
 
+    def test_metadata_write_failure_returns_failed_result_after_required_artifacts(self):
+        frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            worker = camera.PhaseSaveWorker(
+                frames=frames,
+                save_dir=temporary_directory,
+                session_prefix="phase_capture",
+            )
+            results = []
+            worker.result_ready.connect(results.append)
+            with (
+                patch.object(camera.time, "strftime", return_value="20261014_120601"),
+                patch.object(
+                    phase_capture_worker,
+                    "save_phase_capture_metadata",
+                    side_effect=OSError("metadata disk failure"),
+                ),
+                patch.object(worker, "run_automatic_phase_check") as phase_check,
+            ):
+                worker.run()
+
+            result = results[0]
+            self.assertFalse(result.save_success)
+            self.assertIn("metadata disk failure", result.error)
+            self.assertTrue(Path(result.raw_stack_path).is_file())
+            self.assertTrue(list(Path(result.session_dir).glob("phase_*.png")))
+            self.assertIsNone(result.metadata_path)
+            phase_check.assert_not_called()
+
     def test_phase_check_process_returns_success_only_with_outputs(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             checker_path = Path(temporary_directory, "checker.py")
