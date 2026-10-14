@@ -158,6 +158,7 @@ def save_phase_capture_metadata(
             session_dir,
             f"{session_prefix}_{timestamp}_raw_stack.npy",
         ),
+        "analysis_notebook_path": None,
         "png_paths": list(png_paths),
         "phase_times": phase_times,
         "frame_timestamps": frame_timestamps,

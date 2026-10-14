@@ -18,7 +18,7 @@ Restructure the hardware-driven six-frame phase-shifting interferometry workflow
 - **Implemented:** `PhaseSaveWorker` validates the frame count against the selected PSI algorithm before allocating a session directory, preventing malformed stacks from creating partial sessions.
 - **Implemented:** phase-stack persistence now also rejects non-2D frames and inconsistent frame dimensions before allocating a session directory; valid raw stacks retain the `(phase, y, x)` layout.
 - **Implemented:** phase-check subprocess execution now lives in [`src/phase_capture_process.py`](../src/phase_capture_process.py) and returns a typed `PhaseCheckResult`; success requires exit code zero plus both expected output files.
-- **Removed:** per-session Jupyter notebook generation, its template configuration and the notebook-path metadata field; capture saving no longer depends on a notebook template.
+- **Removed:** per-session Jupyter notebook generation and its template configuration; the legacy `analysis_notebook_path` metadata key is retained as `null` for schema compatibility.
 - **Implemented:** `PhaseSaveWorker` now returns a typed `PhaseSaveResult` for successful and failed saves; the GUI and recalibration result consumer use its fields directly.
 - **Implemented:** Pico serial protocol and thread work now live in [`src/pico_serial_worker.py`](../src/pico_serial_worker.py); [`src/camera.py`](../src/camera.py) re-exports the worker for launcher compatibility.
 - **Implemented:** manual frame saving now lives in [`src/manual_capture_worker.py`](../src/manual_capture_worker.py); `camera.FrameSaveWorker` remains available through a compatibility import.

@@ -955,6 +955,7 @@ class CameraContractTests(unittest.TestCase):
                     )
                 )
                 self.assertEqual(metadata["phase_count"], 6)
+                self.assertIsNone(metadata["analysis_notebook_path"])
                 self.assertTrue(metadata["roi"]["roi_available"])
                 self.assertEqual(
                     Path(metadata["roi"]["roi_mask_path"]).name,
