@@ -4,7 +4,6 @@ its session metadata. Older captures default to the legacy 90-degree method.
 """
 
 from pathlib import Path
-from math import factorial
 from dataclasses import dataclass
 import argparse
 import json
@@ -21,30 +20,12 @@ from phase_psi import (
 )
 from phase_unwrap import unwrap_phase_from_center
 from phase_fourier import detect_fourier_carrier
+from phase_aberration import ZERNIKE_MODES, analyze_aberration
 
 
 BASE_DIR = Path(__file__).resolve().parent
 CAPTURE_DIR = BASE_DIR / "captured_frames"
 WAVELENGTH_NM = 632.8
-
-ZERNIKE_MODES = [
-    (1, 0, 0, "Piston"),
-    (2, 1, -1, "Tilt Y"),
-    (3, 1, 1, "Tilt X"),
-    (4, 2, 0, "Defocus"),
-    (5, 2, -2, "Oblique Astigmatism"),
-    (6, 2, 2, "Vertical Astigmatism"),
-    (7, 3, -1, "Vertical Coma"),
-    (8, 3, 1, "Horizontal Coma"),
-    (9, 3, -3, "Vertical Trefoil"),
-    (10, 3, 3, "Oblique Trefoil"),
-    (11, 4, 0, "Primary Spherical"),
-    (12, 4, -2, "Secondary Astigmatism"),
-    (13, 4, 2, "Secondary Astigmatism"),
-    (14, 4, -4, "Quadrafoil"),
-    (15, 4, 4, "Quadrafoil"),
-]
-
 
 @dataclass(frozen=True)
 class PhaseAnalysisResult:
@@ -61,34 +42,6 @@ class PhaseAnalysisResult:
     aberration_rms_nm: float
     aberration_pv_nm: float
     export_path: Path | None
-
-
-def zernike_radial(n, m, rho_values):
-    m = abs(m)
-    if (n - m) % 2 != 0:
-        return np.zeros_like(rho_values, dtype=np.float64)
-
-    radial = np.zeros_like(rho_values, dtype=np.float64)
-    for index in range((n - m) // 2 + 1):
-        numerator = (-1) ** index * factorial(n - index)
-        denominator = (
-            factorial(index)
-            * factorial((n + m) // 2 - index)
-            * factorial((n - m) // 2 - index)
-        )
-        radial += numerator / denominator * rho_values ** (n - 2 * index)
-    return radial
-
-
-def zernike_polynomial(n, m, rho_values, theta_values):
-    radial = zernike_radial(n, m, rho_values)
-    if m == 0:
-        return np.sqrt(n + 1) * radial
-
-    normalization = np.sqrt(2 * (n + 1))
-    if m > 0:
-        return normalization * radial * np.cos(m * theta_values)
-    return normalization * radial * np.sin(abs(m) * theta_values)
 
 
 def figure_to_rgb(figure):
@@ -381,53 +334,42 @@ def analyze_capture(
     print(session_dir)
 
 
-    # ---------------------------------------------------------------------
-    # Fit J1-J15 to the wavefront before piston and tilt removal
-    # ---------------------------------------------------------------------
-    zernike_valid_mask = valid_mask & np.isfinite(phaseUW.filled(np.nan))
-    valid_y, valid_x = np.nonzero(zernike_valid_mask)
-    if valid_x.size < len(ZERNIKE_MODES):
-        raise ValueError("Not enough valid ROI pixels for J1-J15 Zernike fitting.")
-
-    zernike_center_x = float(np.mean(valid_x))
-    zernike_center_y = float(np.mean(valid_y))
-    zernike_radius = float(np.max(np.hypot(
-        valid_x - zernike_center_x,
-        valid_y - zernike_center_y,
-    )))
-    if zernike_radius <= 0:
-        raise ValueError("The ROI pupil radius must be greater than zero.")
-
-    zernike_y_grid, zernike_x_grid = np.indices((sizey, sizex))
-    zernike_x_normalized = (
-        zernike_x_grid - zernike_center_x
-    ) / zernike_radius
-    zernike_y_normalized = (
-        zernike_y_grid - zernike_center_y
-    ) / zernike_radius
-    zernike_rho = np.hypot(zernike_x_normalized, zernike_y_normalized)
-    zernike_theta = np.arctan2(
-        zernike_y_normalized,
-        zernike_x_normalized,
+    aberration_result = analyze_aberration(
+        phaseUW,
+        valid_mask,
+        WAVELENGTH_NM,
     )
-    zernike_fit_mask = zernike_valid_mask & (zernike_rho <= 1.0)
-    rho_values = zernike_rho[zernike_fit_mask]
-    theta_values = zernike_theta[zernike_fit_mask]
-    zernike_design_matrix = np.column_stack([
-        zernike_polynomial(n, m, rho_values, theta_values)
-        for _, n, m, _ in ZERNIKE_MODES
-    ])
-    wavefront_before_correction_waves = (
-        phaseUW.filled(np.nan)[zernike_fit_mask] / (2.0 * np.pi)
+    zernike_fit_mask = aberration_result.fit_mask
+    zernike_coefficients_before_correction = (
+        aberration_result.zernike_coefficients_before_waves
     )
-    zernike_coefficients_before_correction, _, zernike_rank, _ = np.linalg.lstsq(
-        zernike_design_matrix,
-        wavefront_before_correction_waves,
-        rcond=None,
+    zernike_coefficients_after_tilt = (
+        aberration_result.zernike_coefficients_after_waves
     )
-    if zernike_rank != len(ZERNIKE_MODES):
-        raise ValueError(
-            f"J1-J15 Zernike fit is rank deficient: {zernike_rank}/15."
+    aberration_component_waves = aberration_result.aberration_component_waves
+    phaseT = aberration_result.tilt_removed_phase
+    residual_surface_nm = aberration_result.residual_surface_nm
+    wavefront_aberration_nm = aberration_result.wavefront_aberration_nm
+    aberration_rms_nm = aberration_result.aberration_rms_nm
+    aberration_pv_nm = aberration_result.aberration_pv_nm
+    zernike_center_x = aberration_result.zernike_center_x
+    zernike_center_y = aberration_result.zernike_center_y
+    zernike_radius = aberration_result.zernike_radius
+    zernike_after_bar_labels = [
+        f"J{mode_index:02d}\n{mode_name}"
+        for mode_index, _, _, mode_name in ZERNIKE_MODES
+    ]
+    print(
+        "Zernike coefficients before piston/tilt removal (waves):"
+    )
+    for mode, coefficient in zip(
+        ZERNIKE_MODES,
+        zernike_coefficients_before_correction,
+    ):
+        mode_index, n, m, mode_name = mode
+        print(
+            f"J{mode_index:02d} n={n}, m={m:2d} "
+            f"{mode_name:<24} {coefficient:+.6f}"
         )
 
     print("Zernike coefficients before piston/tilt removal (waves):")
@@ -449,30 +391,6 @@ def analyze_capture(
         "Secondary astig.\nJ12/J13",
         "Quadrafoil\nJ14/J15",
     ]
-    aberration_component_waves = np.asarray([
-        np.hypot(
-            zernike_coefficients_before_correction[4],
-            zernike_coefficients_before_correction[5],
-        ),
-        np.hypot(
-            zernike_coefficients_before_correction[6],
-            zernike_coefficients_before_correction[7],
-        ),
-        np.hypot(
-            zernike_coefficients_before_correction[8],
-            zernike_coefficients_before_correction[9],
-        ),
-        abs(zernike_coefficients_before_correction[10]),
-        np.hypot(
-            zernike_coefficients_before_correction[11],
-            zernike_coefficients_before_correction[12],
-        ),
-        np.hypot(
-            zernike_coefficients_before_correction[13],
-            zernike_coefficients_before_correction[14],
-        ),
-    ], dtype=np.float64)
-
     fourier_figure, fourier_axis = plt.subplots(figsize=(12, 7))
     fourier_axis.imshow(np.log1p(fourier_spectrum), cmap="gray")
     fourier_axis.add_patch(plt.Circle(
@@ -547,55 +465,15 @@ def analyze_capture(
     aberration_composition_plot_rgb = figure_to_rgb(composition_figure)
 
 
-    # ---------------------------------------------------------------------
-    # Estimate pupil centre and construct normalised polar coordinates
-    # ---------------------------------------------------------------------
-    xg, yg = np.meshgrid(np.arange(sizex), np.arange(sizey))
-    xg = np.ma.masked_array(xg, mask=mask)
-    yg = np.ma.masked_array(yg, mask=mask)
-
-    xc = np.mean(xg)
-    yc = np.mean(yg)
-
-    print(f"centre x = {xc}, centre y = {yc}")
-
-    xg = (xg - xc) * 0.5 / np.std(xg - xc)
-    yg = (yg - yc) * 0.5 / np.std(yg - yc)
-
-    rg = np.sqrt(xg ** 2 + yg ** 2)
-    tg = np.arctan2(yg, xg)
-
-
-    # ---------------------------------------------------------------------
-    # Remove piston and tilt
-    # ---------------------------------------------------------------------
-    phase_zero_piston = phaseUW - np.mean(phaseUW)
-
-    Z11 = 2.0 * rg * np.cos(tg)
-    Z1m1 = 2.0 * rg * np.sin(tg)
-
-    z11 = np.mean(phase_zero_piston * Z11)
-    z1m1 = np.mean(phase_zero_piston * Z1m1)
-
-    phaseT = phase_zero_piston - z11 * Z11 - z1m1 * Z1m1
-
-    print(f"z11 = {z11}, z1m1 = {z1m1}")
-
-    wavefront_after_tilt_waves = phaseT.filled(np.nan)[zernike_fit_mask] / (2.0 * np.pi)
-    zernike_coefficients_after_tilt, _, zernike_after_rank, _ = np.linalg.lstsq(
-        zernike_design_matrix,
-        wavefront_after_tilt_waves,
-        rcond=None,
+    print(
+        f"centre x = {aberration_result.pupil_center_x}, "
+        f"centre y = {aberration_result.pupil_center_y}"
     )
-    if zernike_after_rank != len(ZERNIKE_MODES):
-        raise ValueError(
-            f"J1-J15 Zernike fit after piston/tilt removal is rank deficient: {zernike_after_rank}/15."
-        )
+    print(
+        f"z11 = {aberration_result.tilt_coefficient_x}, "
+        f"z1m1 = {aberration_result.tilt_coefficient_y}"
+    )
 
-    zernike_after_bar_labels = [
-        f"J{mode_index:02d}\n{mode_name}"
-        for mode_index, _, _, mode_name in ZERNIKE_MODES
-    ]
     zernike_after_figure, zernike_after_axis = plt.subplots(figsize=(12, 7))
     zernike_after_bar_positions = zernike_after_axis.bar(
         zernike_after_bar_labels,
@@ -625,47 +503,11 @@ def analyze_capture(
     zernike_after_plot_rgb = figure_to_rgb(zernike_after_figure)
 
 
-    # ---------------------------------------------------------------------
-    # Fit selected low-order Zernike terms and plot residual surface shape
-    # ---------------------------------------------------------------------
-    Z20 = np.sqrt(3.0) * (2.0 * rg ** 2 - 1.0)
-    Z22 = np.sqrt(6.0) * rg ** 2 * np.cos(2.0 * tg)
-    Z2m2 = np.sqrt(6.0) * rg ** 2 * np.sin(2.0 * tg)
-    Z40 = np.sqrt(5.0) * (6.0 * rg ** 4 - 6.0 * rg ** 2 + 1.0)
-
-    z20 = np.mean(phaseT * Z20)
-    z22 = np.mean(phaseT * Z22)
-    z2m2 = np.mean(phaseT * Z2m2)
-    z40 = np.mean(phaseT * Z40)
-
     print(
-        f"z20 = {z20:.4f} rad, "
-        f"z22 = {z22:.4f} rad, "
-        f"z2m2 = {z2m2:.4f} rad, "
-        f"z40 = {z40:.4f} rad"
-    )
-
-    residual_phase = (
-        phaseT
-        - z20 * Z20
-        - z22 * Z22
-        - z2m2 * Z2m2
-        - z40 * Z40
-    )
-
-    residual_surface_nm = residual_phase * WAVELENGTH_NM / (4.0 * np.pi)
-
-    # For a transmissive lens, phase converts to optical path difference with
-    # lambda/(2*pi). Remove best-fit defocus as well as piston and tilt so the
-    # lens's intended focusing power is not reported as aberration.
-    wavefront_aberration_phase = phaseT - z20 * Z20
-    wavefront_aberration_nm = (
-        wavefront_aberration_phase * WAVELENGTH_NM / (2.0 * np.pi)
-    )
-    aberration_values_nm = wavefront_aberration_nm.compressed()
-    aberration_rms_nm = float(np.sqrt(np.mean(aberration_values_nm ** 2)))
-    aberration_pv_nm = float(
-        np.max(aberration_values_nm) - np.min(aberration_values_nm)
+        f"z20 = {aberration_result.defocus_coefficient:.4f} rad, "
+        f"z22 = {aberration_result.astigmatism_coefficient_x:.4f} rad, "
+        f"z2m2 = {aberration_result.astigmatism_coefficient_y:.4f} rad, "
+        f"z40 = {aberration_result.spherical_coefficient:.4f} rad"
     )
 
     print(
