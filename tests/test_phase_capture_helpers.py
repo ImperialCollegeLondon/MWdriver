@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from phase_capture_frame_filter import (
     decide_framestamp_phase_slot,
     decide_native_phase_frame,
+    select_queued_phase_slots,
     should_accept_phase_frame,
 )
 from phase_capture_timestamps import (
@@ -19,6 +20,32 @@ from phase_capture_timestamps import (
 
 
 class PhaseCaptureFrameFilterTests(unittest.TestCase):
+    def test_queued_frame_slots_are_empty_ordered_and_bounded(self):
+        phase_frames = [None, object(), None, None, None, None]
+
+        self.assertEqual(
+            select_queued_phase_slots(
+                phase_frames,
+                queued_frame_count=3,
+                before_slot=4,
+            ),
+            [0, 2, 3],
+        )
+        self.assertEqual(
+            select_queued_phase_slots(
+                phase_frames,
+                queued_frame_count=2,
+            ),
+            [0, 2],
+        )
+        self.assertEqual(
+            select_queued_phase_slots(
+                phase_frames,
+                queued_frame_count=0,
+            ),
+            [],
+        )
+
     def test_framestamp_decision_rounds_and_maps_one_based_stamp_to_slot(self):
         decision = decide_framestamp_phase_slot(4.7)
 

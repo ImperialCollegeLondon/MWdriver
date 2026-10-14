@@ -46,6 +46,7 @@ from phase_capture_timestamps import (
 from phase_capture_frame_filter import (
     decide_framestamp_phase_slot,
     decide_native_phase_frame,
+    select_queued_phase_slots,
     should_accept_phase_frame,
 )
 from roi_geometry import (
@@ -2562,18 +2563,21 @@ class ThorlabsCameraViewer(QObject):
 
             # Assign any earlier queued frames to lower empty phase slots
             # before assigning the current valid framestamp frame.
-            if self.unassigned_triggered_frames:
-                for slot in range(target_index):
-                    if not self.unassigned_triggered_frames:
-                        break
-                    if self.phase_capture_frames[slot] is None:
-                        queued_frame, queued_meta = self.unassigned_triggered_frames.pop(0)
-                        self.assign_phase_frame(
-                            phase_index=slot,
-                            raw_frame=queued_frame,
-                            source_text=f"queued frame assigned to phase {slot}",
-                            frame_meta=queued_meta,
-                        )
+            queued_slots = select_queued_phase_slots(
+                self.phase_capture_frames,
+                queued_frame_count=len(self.unassigned_triggered_frames),
+                before_slot=target_index,
+            )
+            for slot in queued_slots:
+                if not self.unassigned_triggered_frames:
+                    break
+                queued_frame, queued_meta = self.unassigned_triggered_frames.pop(0)
+                self.assign_phase_frame(
+                    phase_index=slot,
+                    raw_frame=queued_frame,
+                    source_text=f"queued frame assigned to phase {slot}",
+                    frame_meta=queued_meta,
+                )
 
             if self.phase_capture_frames[target_index] is None:
                 phase_index = target_index
@@ -2816,10 +2820,10 @@ class ThorlabsCameraViewer(QObject):
         # and were queued, assign them to the remaining empty phase slots before
         # declaring the session incomplete.
         if self.unassigned_triggered_frames:
-            missing_slots = [
-                i for i, frame in enumerate(self.phase_capture_frames)
-                if frame is None
-            ]
+            missing_slots = select_queued_phase_slots(
+                self.phase_capture_frames,
+                queued_frame_count=len(self.unassigned_triggered_frames),
+            )
 
             print(
                 "Attempting late queued-frame salvage after TRIANGLE_DONE.",

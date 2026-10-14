@@ -32,6 +32,15 @@ def decide_framestamp_phase_slot(framestamp, phase_count=6):
     )
 
 
+def select_queued_phase_slots(phase_frames, queued_frame_count, before_slot=None):
+    empty_slots = [
+        slot
+        for slot, frame in enumerate(phase_frames)
+        if frame is None and (before_slot is None or slot < before_slot)
+    ]
+    return empty_slots[:max(0, queued_frame_count)]
+
+
 def decide_native_phase_frame(frame_meta, expected_acquisition_id, phase_count=6):
     if not isinstance(frame_meta, dict):
         return NativePhaseFrameDecision("fallback")
