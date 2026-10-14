@@ -21,6 +21,7 @@ from phase_psi import (
 from phase_unwrap import unwrap_phase_from_center
 from phase_fourier import detect_fourier_carrier
 from phase_aberration import ZERNIKE_MODES, analyze_aberration
+from phase_analysis_plots import figure_to_rgb, render_aberration_plots
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -42,14 +43,6 @@ class PhaseAnalysisResult:
     aberration_rms_nm: float
     aberration_pv_nm: float
     export_path: Path | None
-
-
-def figure_to_rgb(figure):
-    figure.canvas.draw()
-    rgba = np.asarray(figure.canvas.buffer_rgba())
-    rgb = np.asarray(rgba[..., :3], dtype=np.uint8).copy()
-    plt.close(figure)
-    return rgb
 
 
 def save_intermediate_png(path, image, title, cmap, vmin=None, vmax=None):
@@ -355,10 +348,6 @@ def analyze_capture(
     zernike_center_x = aberration_result.zernike_center_x
     zernike_center_y = aberration_result.zernike_center_y
     zernike_radius = aberration_result.zernike_radius
-    zernike_after_bar_labels = [
-        f"J{mode_index:02d}\n{mode_name}"
-        for mode_index, _, _, mode_name in ZERNIKE_MODES
-    ]
     print(
         "Zernike coefficients before piston/tilt removal (waves):"
     )
@@ -372,14 +361,6 @@ def analyze_capture(
             f"{mode_name:<24} {coefficient:+.6f}"
         )
 
-    aberration_component_labels = [
-        "Astigmatism\nJ5/J6",
-        "Coma\nJ7/J8",
-        "Trefoil\nJ9/J10",
-        "Spherical\nJ11",
-        "Secondary astig.\nJ12/J13",
-        "Quadrafoil\nJ14/J15",
-    ]
     fourier_figure, fourier_axis = plt.subplots(figsize=(12, 7))
     fourier_axis.imshow(np.log1p(fourier_spectrum), cmap="gray")
     fourier_axis.add_patch(plt.Circle(
@@ -402,58 +383,6 @@ def analyze_capture(
     fourier_figure.tight_layout()
     fourier_peak_plot_rgb = figure_to_rgb(fourier_figure)
 
-    zernike_bar_labels = [
-        f"J{mode_index:02d}\n{mode_name}"
-        for mode_index, _, _, mode_name in ZERNIKE_MODES
-    ]
-    zernike_figure, zernike_axis = plt.subplots(figsize=(12, 7))
-    bar_positions = zernike_axis.bar(
-        zernike_bar_labels,
-        zernike_coefficients_before_correction,
-    )
-    for bar, coefficient in zip(bar_positions, zernike_coefficients_before_correction):
-        zernike_axis.text(
-            bar.get_x() + bar.get_width() / 2,
-            coefficient,
-            f"{coefficient:+.3f}",
-            ha="center",
-            va="bottom" if coefficient >= 0 else "top",
-            rotation=90,
-            fontsize=7,
-        )
-    zernike_axis.axhline(0, linewidth=1)
-    zernike_axis.set_title(
-        "Zernike Coefficients Before Piston and Tilt Removal"
-    )
-    zernike_axis.set_xlabel("Noll index and aberration")
-    zernike_axis.set_ylabel("Coefficient / waves")
-    zernike_axis.tick_params(axis="x", labelrotation=45)
-    zernike_figure.tight_layout()
-    zernike_before_plot_rgb = figure_to_rgb(zernike_figure)
-
-    composition_figure, composition_axis = plt.subplots(figsize=(12, 7))
-    composition_bars = composition_axis.bar(
-        aberration_component_labels,
-        aberration_component_waves,
-    )
-    composition_axis.bar_label(
-        composition_bars,
-        fmt="%.4f",
-        padding=3,
-    )
-    composition_axis.set_title(
-        "ROI System Aberration Composition (Piston/Tilt/Defocus Excluded)"
-    )
-    composition_axis.set_xlabel("Zernike aberration group")
-    composition_axis.set_ylabel("Combined coefficient / waves")
-    composition_axis.set_ylim(
-        0,
-        max(float(np.max(aberration_component_waves)) * 1.18, 0.01),
-    )
-    composition_figure.tight_layout()
-    aberration_composition_plot_rgb = figure_to_rgb(composition_figure)
-
-
     print(
         f"centre x = {aberration_result.pupil_center_x}, "
         f"centre y = {aberration_result.pupil_center_y}"
@@ -463,33 +392,17 @@ def analyze_capture(
         f"z1m1 = {aberration_result.tilt_coefficient_y}"
     )
 
-    zernike_after_figure, zernike_after_axis = plt.subplots(figsize=(12, 7))
-    zernike_after_bar_positions = zernike_after_axis.bar(
-        zernike_after_bar_labels,
+    aberration_plots = render_aberration_plots(
+        ZERNIKE_MODES,
+        zernike_coefficients_before_correction,
         zernike_coefficients_after_tilt,
+        aberration_component_waves,
     )
-    for bar, coefficient in zip(
-        zernike_after_bar_positions,
-        zernike_coefficients_after_tilt,
-    ):
-        zernike_after_axis.text(
-            bar.get_x() + bar.get_width() / 2,
-            coefficient,
-            f"{coefficient:+.3f}",
-            ha="center",
-            va="bottom" if coefficient >= 0 else "top",
-            rotation=90,
-            fontsize=7,
-        )
-    zernike_after_axis.axhline(0, linewidth=1)
-    zernike_after_axis.set_title(
-        "Zernike Coefficients After Piston and Tilt Removal"
-    )
-    zernike_after_axis.set_xlabel("Noll index and aberration")
-    zernike_after_axis.set_ylabel("Coefficient / waves")
-    zernike_after_axis.tick_params(axis="x", labelrotation=45)
-    zernike_after_figure.tight_layout()
-    zernike_after_plot_rgb = figure_to_rgb(zernike_after_figure)
+    zernike_bar_labels = aberration_plots.zernike_bar_labels
+    zernike_after_bar_labels = zernike_bar_labels
+    zernike_before_plot_rgb = aberration_plots.zernike_before_rgb
+    zernike_after_plot_rgb = aberration_plots.zernike_after_rgb
+    aberration_composition_plot_rgb = aberration_plots.composition_rgb
 
 
     print(
