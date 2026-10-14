@@ -1100,6 +1100,56 @@ class CameraContractTests(unittest.TestCase):
             self.assertEqual(len(result["warnings"]), 1)
             self.assertIn("mask device unavailable", result["warnings"][0])
 
+    def test_roi_mask_write_failure_marks_metadata_roi_unavailable(self):
+        timestamp = "20261014_120605"
+        frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
+        original_save = np.save
+
+        def fail_mask_save(path, array, *args, **kwargs):
+            if Path(path).name == "roi_mask.npy":
+                raise OSError("mask device unavailable")
+            return original_save(path, array, *args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            def complete_phase_check(session_dir):
+                check_path = Path(session_dir) / "measured_phase_check.json"
+                check_path.write_text(
+                    json.dumps({"measured_phase_deg": [0, 60, 120, 180, 240, 300]}),
+                    encoding="utf-8",
+                )
+                figure_path = Path(session_dir) / "measured_vs_expected_phase_annotated.png"
+                figure_path.touch()
+                return PhaseCheckResult(
+                    True,
+                    "checker passed",
+                    0,
+                    str(figure_path),
+                    str(check_path),
+                )
+
+            worker = camera.PhaseSaveWorker(
+                frames=frames,
+                save_dir=temporary_directory,
+                roi_mask=np.ones((4, 5), dtype=bool),
+                session_prefix="phase_capture",
+            )
+            worker.run_automatic_phase_check = complete_phase_check
+            results = []
+            worker.result_ready.connect(results.append)
+
+            with (
+                patch.object(camera.time, "strftime", return_value=timestamp),
+                patch("phase_capture_storage.np.save", side_effect=fail_mask_save),
+            ):
+                worker.run()
+
+            result = results[0]
+            metadata = json.loads(Path(result.metadata_path).read_text(encoding="utf-8"))
+            self.assertTrue(result.save_success)
+            self.assertTrue(result.phase_check_success)
+            self.assertFalse(metadata["roi"]["roi_available"])
+            self.assertIsNone(metadata["roi"]["roi_mask_path"])
+
     def test_optional_roi_params_write_failure_is_reported_without_blocking_mask(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             with patch(

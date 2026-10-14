@@ -243,7 +243,7 @@ class PhaseSaveWorker(QObject):
                 phase_times=self.phase_times,
                 frame_timestamps=self.frame_timestamps,
                 png_paths=png_paths,
-                roi_available=self.roi_mask is not None,
+                roi_available=roi_mask_path is not None,
                 roi_mask_path=roi_mask_path,
                 roi_params_path=roi_params_path,
                 psi_algorithm_id=self.psi_algorithm_id,
