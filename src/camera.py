@@ -42,6 +42,10 @@ from phase_capture_timestamps import (
     normalize_frame_framestamp,
 )
 from phase_capture_frame_filter import should_accept_phase_frame
+from recalibration import (
+    validate_coarse_measurement,
+    validate_trigger_positions_ms as validate_recalibration_trigger_positions_ms,
+)
 from phase_psi import (
     ALGORITHMS as PSI_ALGORITHMS,
     DEFAULT_ALGORITHM as DEFAULT_PSI_ALGORITHM,
@@ -4694,36 +4698,12 @@ class ThorlabsCameraViewer(QObject):
         return [int(round(value)) for value in positions]
 
     def validate_trigger_positions_ms(self, trigger_positions_ms):
-        if len(trigger_positions_ms) != PHASE_CAPTURE_COUNT:
-            raise ValueError("Exactly six trigger positions are required.")
-
-        positions = [int(round(value)) for value in trigger_positions_ms]
-
-        for value in positions:
-            if value < 0 or value >= RECALIBRATION_FALLING_EDGE_MS:
-                raise ValueError(
-                    "Trigger position out of range: "
-                    f"{value} ms"
-                )
-
-        for index in range(1, len(positions)):
-            if positions[index] <= positions[index - 1]:
-                raise ValueError(
-                    "Trigger positions must be strictly increasing."
-                )
-
-        minimum_spacing = min(
-            positions[index + 1] - positions[index]
-            for index in range(PHASE_CAPTURE_COUNT - 1)
+        return validate_recalibration_trigger_positions_ms(
+            trigger_positions_ms,
+            frame_count=PHASE_CAPTURE_COUNT,
+            falling_edge_ms=RECALIBRATION_FALLING_EDGE_MS,
+            minimum_spacing_ms=RECALIBRATION_MIN_TRIGGER_SPACING_MS,
         )
-
-        if minimum_spacing < RECALIBRATION_MIN_TRIGGER_SPACING_MS:
-            raise ValueError(
-                "Trigger spacing is too small for reliable pulse output: "
-                f"min gap {minimum_spacing} ms"
-            )
-
-        return positions
 
     def enforce_minimum_trigger_spacing(
         self,
@@ -4848,51 +4828,16 @@ class ThorlabsCameraViewer(QObject):
         return target_positions
 
     def validate_coarse_recalibration_measurement(self, measured_phase_deg):
-        measured = np.asarray(measured_phase_deg, dtype=np.float64)
-
-        if measured.shape != (PHASE_CAPTURE_COUNT,):
-            raise ValueError(
-                "Coarse measured phase must contain exactly six values."
-            )
-
-        if not np.all(np.isfinite(measured)):
-            raise ValueError("Coarse measured phase contains NaN or Inf.")
-
-        measured = measured - measured[0]
-        steps = np.diff(measured)
-
-        total_span = float(measured[-1])
-        total_abs_step = float(np.sum(np.abs(steps)))
-        max_abs_step = float(np.max(np.abs(steps))) if steps.size > 0 else 0.0
-        largest_backtrack = float(-np.min(steps)) if steps.size > 0 else 0.0
-
-        if total_span < RECALIBRATION_MIN_COARSE_SPAN_DEG:
-            raise ValueError(
-                "Coarse calibration span is too short: "
-                f"{total_span:.2f} deg < {RECALIBRATION_MIN_COARSE_SPAN_DEG:.2f} deg"
-            )
-
-        if total_abs_step < RECALIBRATION_MIN_COARSE_TOTAL_ABS_STEP_DEG:
-            raise ValueError(
-                "Coarse total absolute phase step is too small: "
-                f"{total_abs_step:.2f} deg < "
-                f"{RECALIBRATION_MIN_COARSE_TOTAL_ABS_STEP_DEG:.2f} deg"
-            )
-
-        if max_abs_step < RECALIBRATION_MIN_COARSE_MAX_STEP_DEG:
-            raise ValueError(
-                "Coarse maximum phase step is too small: "
-                f"{max_abs_step:.2f} deg < {RECALIBRATION_MIN_COARSE_MAX_STEP_DEG:.2f} deg"
-            )
-
-        if largest_backtrack > RECALIBRATION_MAX_COARSE_BACKTRACK_DEG:
-            raise ValueError(
-                "Coarse phase has excessive local backtracking: "
-                f"{largest_backtrack:.2f} deg > "
-                f"{RECALIBRATION_MAX_COARSE_BACKTRACK_DEG:.2f} deg"
-            )
-
-        return measured
+        return validate_coarse_measurement(
+            measured_phase_deg,
+            frame_count=PHASE_CAPTURE_COUNT,
+            minimum_span_deg=RECALIBRATION_MIN_COARSE_SPAN_DEG,
+            minimum_total_abs_step_deg=(
+                RECALIBRATION_MIN_COARSE_TOTAL_ABS_STEP_DEG
+            ),
+            minimum_max_step_deg=RECALIBRATION_MIN_COARSE_MAX_STEP_DEG,
+            maximum_backtrack_deg=RECALIBRATION_MAX_COARSE_BACKTRACK_DEG,
+        )
 
     def save_recalibrated_trigger_positions(
         self,
