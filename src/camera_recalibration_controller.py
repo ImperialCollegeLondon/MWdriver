@@ -8,7 +8,7 @@ import time
 import numpy as np
 from qtpy.QtCore import QCoreApplication
 
-from phase_psi import LEGACY_90_DEG, get_algorithm as get_psi_algorithm
+from mwdriver.domain.phase_psi import LEGACY_90_DEG, get_algorithm as get_psi_algorithm
 from recalibration import (
     DEFAULT_RECALIBRATION_CONFIG,
     build_even_trigger_positions_ms,

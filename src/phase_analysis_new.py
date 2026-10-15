@@ -10,7 +10,7 @@ import json
 
 import numpy as np
 import matplotlib.pyplot as plt
-from phase_psi import (
+from mwdriver.domain.phase_psi import (
     ALGORITHMS as PSI_ALGORITHMS,
     DEFAULT_ALGORITHM as DEFAULT_PSI_ALGORITHM,
     get_algorithm_id_from_metadata,

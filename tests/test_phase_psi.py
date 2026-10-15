@@ -7,10 +7,13 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from phase_psi import (
+import phase_psi as legacy_phase_psi
+
+from mwdriver.domain.phase_psi import (
     ALGORITHMS,
     LEGACY_90_DEG,
     SIX_BUCKET_60_DEG,
+    get_algorithm,
     get_algorithm_id_from_metadata,
     phase_components,
     reconstruct_phase,
@@ -18,6 +21,10 @@ from phase_psi import (
 
 
 class PhaseReconstructionTests(unittest.TestCase):
+    def test_legacy_module_reexports_packaged_api(self):
+        self.assertIs(legacy_phase_psi.reconstruct_phase, reconstruct_phase)
+        self.assertIs(legacy_phase_psi.get_algorithm, get_algorithm)
+
     def make_interferogram(self, algorithm_id, phase):
         steps = np.deg2rad(ALGORITHMS[algorithm_id]["expected_phase_deg"])
         return 120.0 + 35.0 * np.cos(phase[None, :] + steps[:, None])

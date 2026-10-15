@@ -20,7 +20,7 @@ from phase_capture_storage import (
     save_roi_snapshots,
     validate_phase_frame_stack,
 )
-from phase_psi import DEFAULT_ALGORITHM
+from mwdriver.domain.phase_psi import DEFAULT_ALGORITHM
 from recalibration import DEFAULT_RECALIBRATION_CONFIG
 
 

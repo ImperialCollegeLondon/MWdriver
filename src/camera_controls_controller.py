@@ -13,7 +13,7 @@ from qtpy.QtWidgets import (
     QComboBox,
 )
 
-from phase_psi import ALGORITHMS as PSI_ALGORITHMS, get_algorithm as get_psi_algorithm
+from mwdriver.domain.phase_psi import ALGORITHMS as PSI_ALGORITHMS, get_algorithm as get_psi_algorithm
 
 
 STANDARD_PHASE_EXPOSURE_MS = {60.0: 20.0, 90.0: 30.0}

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import imageio.v2 as imageio
 import numpy as np
 
-from phase_psi import DEFAULT_ALGORITHM, get_algorithm
+from mwdriver.domain.phase_psi import DEFAULT_ALGORITHM, get_algorithm
 
 
 @dataclass(frozen=True)

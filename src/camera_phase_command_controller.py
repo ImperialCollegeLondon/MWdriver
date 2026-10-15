@@ -2,7 +2,7 @@
 
 import ast
 
-from phase_psi import LEGACY_90_DEG
+from mwdriver.domain.phase_psi import LEGACY_90_DEG
 
 
 class CameraPhaseCommandController:

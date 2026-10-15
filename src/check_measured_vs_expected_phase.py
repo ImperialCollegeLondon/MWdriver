@@ -23,7 +23,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from phase_psi import (
+from mwdriver.domain.phase_psi import (
     ALGORITHMS as PSI_ALGORITHMS,
     DEFAULT_ALGORITHM as DEFAULT_PSI_ALGORITHM,
     get_algorithm_id_from_metadata,
