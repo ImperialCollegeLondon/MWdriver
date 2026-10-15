@@ -9,8 +9,8 @@ matplotlib.use("Agg")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from phase_aberration import ZERNIKE_MODES
-from phase_analysis_plots import render_aberration_plots
+from mwdriver.analysis.phase_aberration import ZERNIKE_MODES
+from mwdriver.analysis.phase_analysis_plots import render_aberration_plots
 
 
 class PhaseAnalysisPlotTests(unittest.TestCase):

@@ -22,6 +22,8 @@ the desktop application coordinates acquisition and saves captures for analysis.
 | `src/mwdriver/domain/profile_drag.py` | Packaged profile-line hit testing and drag-target geometry. |
 | `src/check_measured_vs_expected_phase.py` | Non-interactive FFT-based check against phase positions recorded in each capture session; saves JSON diagnostics and an annotated plot. |
 | `src/phase_analysis_new.py` | Mode-selected six-frame phase reconstruction, unwrapping, and Zernike/aberration analysis, with saved images and an optional viewer/export. |
+| `src/mwdriver/analysis/` | Packaged phase unwrapping, Fourier carrier detection, aberration fitting, diagnostic plotting, and interactive result viewing. |
+| `src/phase_unwrap.py`, `src/phase_fourier.py`, `src/phase_aberration.py`, `src/phase_analysis_plots.py`, `src/phase_analysis_viewer.py` | Compatibility shims re-exporting the packaged analysis APIs. |
 | `pypico/main.py` | Pico/MicroPython firmware: triangle-wave timing, six trigger pulses, and USB serial commands/status. |
 
 ## Setup

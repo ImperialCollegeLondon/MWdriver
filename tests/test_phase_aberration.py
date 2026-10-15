@@ -6,7 +6,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from phase_aberration import ZERNIKE_MODES, analyze_aberration
+from mwdriver.analysis.phase_aberration import ZERNIKE_MODES, analyze_aberration
 
 
 class PhaseAberrationTests(unittest.TestCase):
