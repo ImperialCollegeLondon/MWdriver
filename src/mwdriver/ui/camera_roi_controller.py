@@ -14,8 +14,8 @@ from mwdriver.domain.roi_geometry import (
     build_roi_selection,
     downsample_mask,
 )
-from roi_controls import create_roi_menu
-from roi_storage import load_roi_files, save_roi_files
+from mwdriver.ui.roi_controls import create_roi_menu
+from mwdriver.ui.roi_storage import load_roi_files, save_roi_files
 
 
 SCRIPT_DIR = str(Path(__file__).resolve().parents[2])

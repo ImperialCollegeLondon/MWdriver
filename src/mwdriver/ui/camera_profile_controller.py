@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from qtpy.QtCore import QTimer
 
-from profile_controls import create_profile_controls
+from mwdriver.ui.profile_controls import create_profile_controls
 from mwdriver.domain.intensity_profile import (
     build_initial_profile_line,
     clamp_profile_line,

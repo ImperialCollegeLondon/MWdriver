@@ -3,7 +3,7 @@
 from qtpy.QtCore import QTimer
 
 from mwdriver.domain.layer_visibility import build_layer_visibility_plan
-from phase_analysis_controls import (
+from mwdriver.ui.phase_analysis_controls import (
     build_analysis_layer_presentation,
     build_phase_analysis_result_options,
     choose_analysis_layer_operation,

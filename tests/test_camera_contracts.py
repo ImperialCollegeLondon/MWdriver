@@ -34,9 +34,9 @@ from mwdriver.domain.recalibration import (
     decide_verification_capture_action,
     select_best_recalibration_candidate,
 )
-from roi_controls import create_roi_menu
-from profile_controls import create_profile_controls
-from phase_analysis_controls import (
+from mwdriver.ui.roi_controls import create_roi_menu
+from mwdriver.ui.profile_controls import create_profile_controls
+from mwdriver.ui.phase_analysis_controls import (
     build_analysis_layer_presentation,
     build_phase_analysis_result_options,
     choose_analysis_layer_operation,
