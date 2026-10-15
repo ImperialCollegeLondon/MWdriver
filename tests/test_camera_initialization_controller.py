@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import camera_initialization_controller as initialization_controller
-from camera_initialization_controller import CameraInitializationController
+import mwdriver.ui.camera_initialization_controller as initialization_controller
+from mwdriver.ui.camera_initialization_controller import CameraInitializationController
 
 
 class FakeCamera:

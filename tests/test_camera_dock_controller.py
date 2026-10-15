@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from camera_dock_controller import CameraDockController
+from mwdriver.ui.camera_dock_controller import CameraDockController
 from qtpy.QtCore import QEvent
 
 

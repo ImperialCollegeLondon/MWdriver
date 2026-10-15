@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from camera_phase_command_controller import CameraPhaseCommandController
+from mwdriver.ui.camera_phase_command_controller import CameraPhaseCommandController
 from mwdriver.domain.phase_psi import LEGACY_90_DEG
 
 

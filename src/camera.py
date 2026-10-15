@@ -15,21 +15,21 @@ from mwdriver.capture.phase_capture_controller import (
     PHASE_CAPTURE_COUNT,
     PhaseCaptureController,
 )
-from camera_runtime_controller import CameraRuntimeController, CameraWorker
-from camera_recalibration_controller import CameraRecalibrationController
-from camera_controls_controller import (
+from mwdriver.ui.camera_runtime_controller import CameraRuntimeController, CameraWorker
+from mwdriver.ui.camera_recalibration_controller import CameraRecalibrationController
+from mwdriver.ui.camera_controls_controller import (
     CameraControlsController,
     STANDARD_PHASE_EXPOSURE_MS,
 )
-from camera_roi_controller import CameraRoiController
-from camera_view_controller import CameraViewController
-from camera_profile_controller import CameraProfileController
-from camera_dock_controller import CameraDockController
-from camera_phase_analysis_controller import (
+from mwdriver.ui.camera_roi_controller import CameraRoiController
+from mwdriver.ui.camera_view_controller import CameraViewController
+from mwdriver.ui.camera_profile_controller import CameraProfileController
+from mwdriver.ui.camera_dock_controller import CameraDockController
+from mwdriver.ui.camera_phase_analysis_controller import (
     CameraPhaseAnalysisController,
     PHASE_ANALYSIS_SCRIPT,
 )
-from camera_manual_capture_controller import (
+from mwdriver.ui.camera_manual_capture_controller import (
     CameraManualCaptureController,
     FrameSaveWorker,
     MANUAL_CAPTURE_COUNT,
@@ -37,8 +37,8 @@ from camera_manual_capture_controller import (
     SAVE_DIR,
     SCRIPT_DIR,
 )
-from camera_initialization_controller import CameraInitializationController
-from camera_phase_command_controller import CameraPhaseCommandController
+from mwdriver.ui.camera_initialization_controller import CameraInitializationController
+from mwdriver.ui.camera_phase_command_controller import CameraPhaseCommandController
 from mwdriver.hardware.thorlabs_native_camera import NativeThorlabsCamera
 from mwdriver.hardware.pico_serial_worker import PicoSerialWorker
 from mwdriver.capture.phase_capture_worker import PhaseSaveWorker

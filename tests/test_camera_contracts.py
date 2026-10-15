@@ -638,13 +638,19 @@ class CameraContractTests(unittest.TestCase):
     @staticmethod
     def load_controller_method(method_name, namespace):
         if method_name == "wait_for_trigger_update_ack":
-            camera_path = ROOT / "src" / "camera_recalibration_controller.py"
+            camera_path = (
+                ROOT / "src" / "mwdriver" / "ui"
+                / "camera_recalibration_controller.py"
+            )
             class_name = "CameraRecalibrationController"
         elif method_name in {
             "print_pico_message",
             "request_pico_phase_capture_from_button",
         }:
-            camera_path = ROOT / "src" / "camera_phase_command_controller.py"
+            camera_path = (
+                ROOT / "src" / "mwdriver" / "ui"
+                / "camera_phase_command_controller.py"
+            )
             class_name = "CameraPhaseCommandController"
         else:
             camera_path = ROOT / "src" / "camera.py"

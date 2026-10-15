@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from camera_runtime_controller import CameraRuntimeController
+from mwdriver.ui.camera_runtime_controller import CameraRuntimeController
 
 
 class CameraRuntimeControllerTests(unittest.TestCase):

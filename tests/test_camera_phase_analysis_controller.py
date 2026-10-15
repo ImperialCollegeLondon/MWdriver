@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import camera_phase_analysis_controller as analysis_controller
-from camera_phase_analysis_controller import CameraPhaseAnalysisController
+import mwdriver.ui.camera_phase_analysis_controller as analysis_controller
+from mwdriver.ui.camera_phase_analysis_controller import CameraPhaseAnalysisController
 from mwdriver.capture.phase_capture_storage import PhaseSaveResult
 
 

@@ -8,8 +8,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import camera_manual_capture_controller as manual_controller
-from camera_manual_capture_controller import CameraManualCaptureController
+import mwdriver.ui.camera_manual_capture_controller as manual_controller
+from mwdriver.ui.camera_manual_capture_controller import CameraManualCaptureController
 
 
 class StatusLabel:
