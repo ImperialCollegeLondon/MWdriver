@@ -10,18 +10,11 @@ matplotlib.use("Agg")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import phase_analysis_viewer as legacy_analysis_viewer
 from matplotlib.widgets import Button
 from mwdriver.analysis.phase_analysis_viewer import show_analysis_result_viewer
 
 
 class PhaseAnalysisViewerTests(unittest.TestCase):
-    def test_legacy_module_reexports_packaged_viewer(self):
-        self.assertIs(
-            legacy_analysis_viewer.show_analysis_result_viewer,
-            show_analysis_result_viewer,
-        )
-
     def test_viewer_buttons_render_image_bar_and_fourier_results(self):
         results = [
             {

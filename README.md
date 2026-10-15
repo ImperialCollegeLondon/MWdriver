@@ -9,32 +9,14 @@ the desktop application coordinates acquisition and saves captures for analysis.
 
 | File | Role |
 | --- | --- |
-| `src/camera.py` | Napari/Qt desktop controller: live view, ROI selection, six-frame capture, trigger recalibration, and analysis launching. |
-| `src/mwdriver/hardware/thorlabs_native_camera.py` | Native Thorlabs TSI SDK backend: camera discovery, acquisition, trigger switching, copied frames and timestamps. |
-| `src/mwdriver/hardware/pico_serial_worker.py` | Pico serial protocol and capture-lifecycle worker. |
-| `src/thorlabs_native_camera.py`, `src/pico_serial_worker.py` | Compatibility shims re-exporting the packaged hardware adapters. |
-| `src/mwdriver/capture/` | Phase-capture controller, workers, frame/timestamp policies, persistence, and phase-check subprocess. |
-| `src/phase_capture_*.py`, `src/manual_capture_worker.py` | Compatibility shims re-exporting packaged capture APIs. |
-| `src/mwdriver/ui/` | Napari/Qt controller mixins, application bootstrap, worker lifecycle, ROI/profile storage and controls, and phase-analysis controls. |
-| `src/camera.py` | Compatibility launcher and composition root for the packaged UI controllers. |
-| `src/phase_capture_timestamps.py` | Timestamp payload and camera frame-timestamp normalization helpers used by the capture controller. |
-| `src/phase_capture_frame_filter.py` | Frame acceptance helper used by the capture controller. |
-| `src/mwdriver/domain/phase_psi.py` | Packaged six-frame PSI definitions and 90-degree / 60-degree wrapped-phase estimators. |
-| `src/phase_psi.py` | Compatibility shim re-exporting the packaged PSI API for existing imports. |
-| `src/mwdriver/domain/recalibration.py` | Packaged pure trigger-position, measurement-validation, and recalibration-candidate policies. |
-| `src/recalibration.py` | Compatibility shim re-exporting the packaged recalibration API for existing imports. |
-| `src/mwdriver/domain/roi_geometry.py` | Packaged pure ROI conversion, mask, and display-frame geometry. |
-| `src/mwdriver/domain/intensity_profile.py` | Packaged line placement, movement, and raw-frame sampling geometry. |
-| `src/mwdriver/domain/profile_drag.py` | Packaged profile-line hit testing and drag-target geometry. |
-| `src/mwdriver/domain/stream_policy.py` | Packaged camera preview/capture/stopped mode selection. |
-| `src/mwdriver/domain/layer_visibility.py` | Packaged visibility plans for camera, ROI, analysis, and time-series layers. |
-| `src/mwdriver/domain/camera_frames.py` | Packaged raw-to-display frame downsampling and contiguous-array preparation. |
-| `src/mwdriver/analysis/check_measured_vs_expected_phase.py` | Non-interactive FFT-based check against phase positions recorded in each capture session; saves JSON diagnostics and an annotated plot. |
-| `src/check_measured_vs_expected_phase.py` | Compatibility CLI shim used by existing launch commands and capture workers. |
-| `src/mwdriver/analysis/phase_analysis_new.py` | Mode-selected six-frame phase reconstruction, unwrapping, and Zernike/aberration analysis, with saved images and an optional viewer/export. |
-| `src/phase_analysis_new.py` | Compatibility CLI shim retaining the documented script entry point. |
-| `src/mwdriver/analysis/` | Packaged phase unwrapping, Fourier carrier detection, aberration fitting, diagnostic plotting, and interactive result viewing. |
-| `src/phase_unwrap.py`, `src/phase_fourier.py`, `src/phase_aberration.py`, `src/phase_analysis_plots.py`, `src/phase_analysis_viewer.py` | Compatibility shims re-exporting the packaged analysis APIs. |
+| `src/camera.py` | Desktop launcher, compatibility facade, and composition root for the Napari/Qt viewer. |
+| `src/check_measured_vs_expected_phase.py` | Phase-check CLI entry point used by saved-capture workflows. |
+| `src/phase_analysis_new.py` | Offline phase-analysis CLI entry point. |
+| `src/mwdriver/domain/` | Hardware-independent PSI, calibration, ROI/profile geometry, streaming, visibility, and frame policies. |
+| `src/mwdriver/hardware/` | Native Thorlabs camera adapter and Pico serial worker. |
+| `src/mwdriver/capture/` | Phase-capture lifecycle, frame/timestamp policy, workers, persistence, and checker process. |
+| `src/mwdriver/analysis/` | Phase reconstruction, unwrapping, Fourier, aberration, plotting, and result-viewing implementations. |
+| `src/mwdriver/ui/` | Napari/Qt controllers, widget builders, application bootstrap, and worker lifecycle. |
 | `pypico/main.py` | Pico/MicroPython firmware: triangle-wave timing, six trigger pulses, and USB serial commands/status. |
 
 ## Setup

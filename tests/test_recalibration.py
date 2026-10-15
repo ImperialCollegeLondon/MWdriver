@@ -7,8 +7,6 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import recalibration as legacy_recalibration
-
 from mwdriver.domain.recalibration import (
     DEFAULT_RECALIBRATION_CONFIG,
     RecalibrationConfig,
@@ -27,13 +25,6 @@ from mwdriver.domain.recalibration import (
 
 
 class RecalibrationValidationTests(unittest.TestCase):
-    def test_legacy_module_reexports_packaged_api(self):
-        self.assertIs(legacy_recalibration.RecalibrationConfig, RecalibrationConfig)
-        self.assertIs(
-            legacy_recalibration.compute_coarse_refined_positions_ms,
-            compute_coarse_refined_positions_ms,
-        )
-
     def test_verification_capture_progression_actions(self):
         config = RecalibrationConfig(max_refinement_rounds=2)
         cases = [

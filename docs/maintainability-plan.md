@@ -2,131 +2,39 @@
 
 ## Goal
 
-Restructure the hardware-driven six-frame phase-shifting interferometry workflow around testable ownership boundaries, without changing camera/Pico timing, capture-session formats, offline command-line behavior, or compatibility with older captures.
+Keep the hardware-driven six-frame phase-shifting interferometry workflow behaviourally stable while organising implementation by responsibility and testing pure policies independently.
 
-## Current Progress
+## Package Layout
 
-- **Implemented:** value-only trigger-position validation and coarse-measurement quality checks live in [`src/recalibration.py`](../src/recalibration.py), with the desktop controller delegating to them from [`src/camera.py`](../src/camera.py).
-- **Implemented:** focused unit coverage for trigger rounding, bounds, ordering, spacing, measurement shape, finite values, span, backtracking, strict acceptance tolerance, and the coarse solver's list-to-array validation boundary in [`tests/test_recalibration.py`](../tests/test_recalibration.py).
-- **Implemented:** fake-driven coverage for stale-frame acceptance boundaries, timestamp normalization and fallback, and native frame acquisition metadata in [`tests/test_phase_capture_helpers.py`](../tests/test_phase_capture_helpers.py) and [`tests/test_thorlabs_native_camera.py`](../tests/test_thorlabs_native_camera.py).
-- **Implemented:** controller contract tests cover phase-slot assignment, stale acquisition rejection, Pico serial command payloads and capture-lifecycle messages, trigger-update ACK parsing/match/rejection/mismatch/timeout, saved session paths/filenames and metadata, phase-check JSON output, save/check failure reporting, iterative refinement scheduling, and verification-limit termination in [`tests/test_camera_contracts.py`](../tests/test_camera_contracts.py).
-- **Implemented:** value-only coarse trigger generation, camera-safe spacing enforcement, coarse phase interpolation, damped iterative refinement, candidate scoring, strict acceptance, and auto-restart eligibility now live in [`src/recalibration.py`](../src/recalibration.py). The GUI supplies PSI targets, camera-required spacing, bounds, tolerances, and damping settings explicitly.
-- **Implemented:** direct unit tests cover coarse/refined timing bounds and spacing, score ordering, and auto-restart thresholds in [`tests/test_recalibration.py`](../tests/test_recalibration.py).
-- **Implemented:** calibration captures continue to save files and run phase checks, but no longer add six-frame stacks as Napari layers.
-- **Implemented:** unique phase-capture session directory allocation now lives in [`src/phase_capture_storage.py`](../src/phase_capture_storage.py) and preserves the existing timestamp and numeric suffix convention.
-- **Implemented:** ROI snapshot, raw-stack, phase PNG and capture-metadata writes are now storage helpers; the GUI worker retains save ordering, phase-check orchestration and UI progress signals.
-- **Implemented:** `PhaseSaveWorker` validates the frame count against the selected PSI algorithm before allocating a session directory, preventing malformed stacks from creating partial sessions.
-- **Implemented:** phase-stack persistence now also rejects non-2D frames and inconsistent frame dimensions before allocating a session directory; valid raw stacks retain the `(phase, y, x)` layout.
-- **Implemented:** supplied phase-time and frame-timestamp arrays must align with the validated frame count before session allocation; omitted timing arrays remain supported.
-- **Implemented:** phase-check subprocess execution now lives in [`src/phase_capture_process.py`](../src/phase_capture_process.py) and returns a typed `PhaseCheckResult`; success requires exit code zero plus both expected output files.
-- **Removed:** per-session Jupyter notebook generation and its template configuration; the legacy `analysis_notebook_path` metadata key is retained as `null` for schema compatibility.
-- **Implemented:** `PhaseSaveWorker` now returns a typed `PhaseSaveResult` for successful and failed saves; the GUI and recalibration result consumer use its fields directly.
-- **Implemented:** Pico serial protocol and thread work now live in [`src/pico_serial_worker.py`](../src/pico_serial_worker.py); [`src/camera.py`](../src/camera.py) re-exports the worker for launcher compatibility.
-- **Implemented:** manual frame saving now lives in [`src/manual_capture_worker.py`](../src/manual_capture_worker.py); `camera.FrameSaveWorker` remains available through a compatibility import.
-- **Implemented:** phase-capture saving and progress reporting now live in [`src/phase_capture_worker.py`](../src/phase_capture_worker.py); the GUI supplies its voltage mapper and keeps the existing `camera.PhaseSaveWorker` import path.
-- **Implemented:** phase-capture lifecycle orchestration (external-trigger transition, frame assignment/reconciliation, completion, live-view restoration, stack-layer creation and save/result handling) now lives in [`src/phase_capture_controller.py`](../src/phase_capture_controller.py).
-- **Implemented:** Napari active-layer coordination, preview/analysis view transitions, analysis-layer presentation and streaming synchronization now live in [`src/camera_view_controller.py`](../src/camera_view_controller.py). `ThorlabsCameraViewer` inherits the controller to preserve existing method access.
-- **Implemented:** ROI vertex scaling, clipping, rectangle/ellipse masks and ROI metadata construction now live in the Qt-free [`src/roi_geometry.py`](../src/roi_geometry.py), with direct tests for shape and boundary behavior.
-- **Implemented:** ROI inside/outside mask polarity, display-resolution downsampling, and display-frame masking now also live in [`src/roi_geometry.py`](../src/roi_geometry.py), with direct tests for polarity, shape mismatch, and non-mutating application.
-- **Implemented:** ROI selection state now derives retained mask, display mask and persisted mask metadata together in `build_roi_selection`, used by mask actions and save.
-- **Implemented:** saved ROI JSON/mask persistence and reload validation/shape reconstruction now live in [`src/roi_storage.py`](../src/roi_storage.py), with round-trip coverage for rectangle and ellipse schemas.
-- **Implemented:** ROI menu action construction and callback wiring now live in [`src/mwdriver/ui/roi_controls.py`](../src/mwdriver/ui/roi_controls.py); `src/roi_controls.py` remains a compatibility shim.
-- **Implemented:** Camera Tools menu setup, status and exposure/gain widgets, PSI selection and adjustment callbacks now live in [`src/camera_controls_controller.py`](../src/camera_controls_controller.py); exposure presets remain available through `camera.py`.
-- **Implemented:** Napari chrome simplification, layer-control visibility, MWdriver dock composition, embedded-widget placement, and resize handling now live in [`src/camera_dock_controller.py`](../src/camera_dock_controller.py); `ThorlabsCameraViewer` inherits the controller and retains the same initialization order.
-- **Implemented:** Camera acquisition, stream/thread lifecycle, frame/FPS/status routing, and Pico listener lifecycle now live in [`src/camera_runtime_controller.py`](../src/camera_runtime_controller.py); `camera.CameraWorker` remains available as a compatibility import, and trigger-ACK parsing remains with recalibration state in `camera.py`.
-- **Implemented:** Phase-analysis session discovery, latest/selected capture dispatch, subprocess launch/polling, and result loading now live in [`src/camera_phase_analysis_controller.py`](../src/camera_phase_analysis_controller.py); `camera.PHASE_ANALYSIS_SCRIPT` and `camera.PhaseSaveResult` remain available for compatibility.
-- **Implemented:** GUI-level recalibration scheduling, trigger-map persistence, Pico ACK handling, retry/restart policy application, and candidate finalization now live in [`src/camera_recalibration_controller.py`](../src/camera_recalibration_controller.py); the existing phase-capture state machine continues to call the same viewer methods through its mixin MRO.
-- **Implemented:** Manual six-frame sampling, save-worker startup, and save-result UI handling now live in [`src/camera_manual_capture_controller.py`](../src/camera_manual_capture_controller.py); shared save-worker cleanup remains in `camera.py` because both manual and phase captures use it.
-- **Implemented:** Native camera configuration/acquisition startup and Napari viewer/layer startup now live in [`src/camera_initialization_controller.py`](../src/camera_initialization_controller.py); `ThorlabsCameraViewer` retains the same startup call order and `camera.NativeThorlabsCamera` compatibility import.
-- **Implemented:** Software-button phase capture requests and Pico trigger-update ACK parsing now live in [`src/camera_phase_command_controller.py`](../src/camera_phase_command_controller.py); callback method names and Pico worker signal wiring are unchanged.
-- **Started:** A logical Python package now exists under `src/mwdriver/`; pure PSI, recalibration, ROI/profile geometry, stream selection, layer visibility, and camera display-frame preparation are owned by modules under `src/mwdriver/domain/`, internal imports use package paths, and the original flat modules remain compatibility shims.
-- **Implemented:** Offline phase unwrapping, Fourier carrier detection, aberration fitting, diagnostic plotting, and interactive result viewing now live under [`src/mwdriver/analysis/`](../src/mwdriver/analysis/); `phase_analysis_new.py` remains the executable CLI and flat helper modules remain compatibility shims.
-- **Implemented:** The non-interactive phase-checker implementation now lives in `mwdriver.analysis`; `src/check_measured_vs_expected_phase.py` remains the subprocess-compatible CLI shim and checker outputs/configuration remain rooted under `src/` and each capture session.
-- **Implemented:** The main phase-analysis implementation now lives in [`src/mwdriver/analysis/phase_analysis_new.py`](../src/mwdriver/analysis/phase_analysis_new.py); `src/phase_analysis_new.py` remains the direct-script CLI shim and capture discovery remains rooted under `src/captured_frames`.
-- **Implemented:** The native Thorlabs camera backend and Pico serial worker now live under [`src/mwdriver/hardware/`](../src/mwdriver/hardware/); direct controller imports use the package paths and the flat modules remain compatibility shims.
-- **Implemented:** Phase-capture orchestration, worker, persistence, checker process, timestamp normalization, frame filtering, and manual save worker now live under [`src/mwdriver/capture/`](../src/mwdriver/capture/); existing flat modules remain compatibility shims.
-- **Implemented:** Napari/Qt controller mixins, application bootstrap, and worker lifecycle now live under [`src/mwdriver/ui/`](../src/mwdriver/ui/); flat modules remain compatibility shims and `src/camera.py` composes the existing viewer MRO.
-- **Implemented:** Napari/Qt controller mixins now live under [`src/mwdriver/ui/`](../src/mwdriver/ui/); legacy controller module paths remain compatibility shims and `src/camera.py` continues to compose the same viewer MRO and launcher behavior.
-- **Implemented:** ROI menu/fallback UI setup, drawing lifecycle, masking, reload and save orchestration now live in [`src/camera_roi_controller.py`](../src/camera_roi_controller.py); `ThorlabsCameraViewer` inherits it to preserve method access.
-- **Implemented:** intensity profile widget construction now lives in [`src/mwdriver/ui/profile_controls.py`](../src/mwdriver/ui/profile_controls.py); `src/profile_controls.py` remains a compatibility shim.
-- **Implemented:** raw-frame sampling along the display-space intensity profile line now lives in the pure [`src/intensity_profile.py`](../src/intensity_profile.py) helper, with tests for downsampling, clipping, and point limits.
-- **Implemented:** default centered profile-line placement, display-bound clamping and endpoint/whole-line drag geometry are computed by `src/intensity_profile.py`, independently of Napari layer mutation.
-- **Implemented:** intensity-profile endpoint and line hit testing now lives in the pure [`src/profile_drag.py`](../src/profile_drag.py) helper; Qt mouse interaction and line mutation remain in the controller.
-- **Implemented:** intensity-profile state, controls, Napari line interaction, raw-frame sampling orchestration and Matplotlib lifecycle now live in [`src/camera_profile_controller.py`](../src/camera_profile_controller.py); shared camera frame buffers remain in `camera.py`.
-- **Implemented:** phase-analysis title/selector/view-button construction now lives in [`src/mwdriver/ui/phase_analysis_controls.py`](../src/mwdriver/ui/phase_analysis_controls.py); option population and Napari layer behavior remain in the controller.
-- **Implemented:** phase-analysis result ordering, availability filtering and RMS/PV selector labeling now live in `build_phase_analysis_result_options(...)`, with tests for partial result bundles and legacy metric labels.
-- **Implemented:** analysis result layer naming, RGB detection, colormap selection and contrast limits are calculated by a pure helper in [`src/phase_analysis_controls.py`](../src/phase_analysis_controls.py); Napari layer lifecycle remains in the controller.
-- **Implemented:** analysis layer add/replace/update selection now uses `choose_analysis_layer_operation(...)` in [`src/phase_analysis_controls.py`](../src/phase_analysis_controls.py), with truth-table coverage for creation, missing records and RGB-mode changes.
-- **Implemented:** camera preview, ROI, analysis and phase time-series visibility decisions now come from the Qt-free [`src/mwdriver/domain/layer_visibility.py`](../src/mwdriver/domain/layer_visibility.py); Napari visibility mutation remains in the controller.
-- **Implemented:** camera stream mode selection (`preview`, `capture`, or `stopped`) now lives in the pure [`src/mwdriver/domain/stream_policy.py`](../src/mwdriver/domain/stream_policy.py); thread creation, teardown and frame handling remain in the UI runtime controller.
-- **Implemented:** raw-to-display frame downsampling and contiguous-array preparation now live in [`src/mwdriver/domain/camera_frames.py`](../src/mwdriver/domain/camera_frames.py); camera polling, frame metadata pairing and emission order remain in `CameraWorker`.
-- **Implemented:** camera stream teardown now uses the ordered `stop_worker_thread(...)` helper in [`src/mwdriver/ui/worker_lifecycle.py`](../src/mwdriver/ui/worker_lifecycle.py); Pico shutdown retains its separate timeout and best-effort error handling.
-- **Implemented:** native phase-frame metadata validation (trigger mode, acquisition identity and slot bounds) now returns a typed decision from [`src/phase_capture_frame_filter.py`](../src/phase_capture_frame_filter.py); the controller retains diagnostics, grace-window fallback and slot assignment.
-- **Implemented:** fallback camera framestamp rounding and phase-slot range selection now return a typed decision from `phase_capture_frame_filter.py`; the controller retains queued-frame reconciliation, duplicate handling and assignment.
-- **Implemented:** queued-frame backfill and late salvage now share the tested ordered empty-slot selector in `phase_capture_frame_filter.py`; queue mutation, frame assignment and completion checks remain in the controller.
-- **Implemented:** phase-slot assignment eligibility (active session, valid index, empty slot) now returns a pure decision from `phase_capture_frame_filter.py`; frame copying, timestamp collection, counters and completion signaling remain in the controller.
-- **Implemented:** `TRIANGLE_DONE` uses a pure completion decision that checks inactive/finalized state before the reset frame count, and distinguishes late-frame wait from immediate completion.
-- **Implemented:** incomplete verification-capture handling now selects retry, keep-best, or abort through `decide_incomplete_capture_action(...)` in [`src/recalibration.py`](../src/recalibration.py); retry counters, candidate selection and hardware scheduling remain in the controller.
-- **Implemented:** all recalibration fallback paths now use `select_best_recalibration_candidate(...)` for stable minimum-score selection; tie ordering and empty input are tested.
-- **Implemented:** verification progression now selects confirm, await-confirmation, keep-best, evaluate-best, or refine through `decide_verification_capture_action(...)` in [`src/recalibration.py`](../src/recalibration.py); candidate finalization, restart and trigger scheduling remain in the controller.
-- **Implemented:** desktop viewer creation, Napari event-loop startup and close-event cleanup wiring now live in [`src/application_bootstrap.py`](../src/application_bootstrap.py); `camera.main()` remains the launcher entry point.
-- **Implemented:** bootstrap cleanup is idempotent and guaranteed when Napari's event loop returns, as well as on the window close event.
-- **Implemented:** offline phase analysis is import-safe and exposes `analyze_capture(...)` with a typed `PhaseAnalysisResult`; CLI session discovery, `--export`, and viewer selection remain in `main()`.
-- **Implemented:** center-out vertical/horizontal phase unwrapping now lives in callable `src/phase_unwrap.py`; synthetic tests verify exact output and mask parity with the prior calculation.
-- **Implemented:** Fourier carrier peak detection and mask-radius selection now live in callable `src/phase_fourier.py`, returning a typed result used by the existing diagnostics/export/viewer paths.
-- **Implemented:** PSI phase numerator/denominator components are calculated once in `phase_psi.phase_components(...)` and shared by reconstruction and offline diagnostic plots.
-- **Implemented:** Zernike fitting, tilt removal, residual/wavefront surfaces, and aberration metrics now run through callable `phase_aberration.analyze_aberration(...)`, returning an `AberrationResult` bundle.
-- **Implemented:** NPZ export path creation and serialization now go through the explicit `write_analysis_export(...)` helper; array assembly remains within `analyze_capture(...)`.
-- **Implemented:** Zernike-before/after and aberration-composition chart rendering now lives in [`src/phase_analysis_plots.py`](../src/phase_analysis_plots.py); synthetic tests cover RGB image shape and labels, and real-capture output matches the existing RGB arrays exactly.
-- **Implemented:** interactive Matplotlib result viewing now lives in [`src/phase_analysis_viewer.py`](../src/phase_analysis_viewer.py); callback tests exercise image, bar, and Fourier views without opening a GUI window.
-- **Verified:** `camera.py` is reduced to 306 lines after extracting phase-capture, Napari view/layer, ROI, profile, camera-controls, Napari dock, camera/Pico runtime, phase-analysis, recalibration, manual-capture, initialization, and Pico phase-command controllers; the full 146-test suite passes. The user has confirmed the physical test is okay.
-- **Fixed:** removed an unused Fourier RGB rasterization from `analyze_capture(...)`; the Fourier spectrum, peak coordinates, mask radius, and console diagnostic remain unchanged.
-- **Fixed:** hardware log evidence exposed a list/NumPy-array mismatch in the coarse recalibration solver, which stopped the workflow before the first verification capture. The validated phase list is now converted back to an array before interpolation.
-- **Fixed:** only verification candidates with every point inside +/-5 degrees count as a pass; candidates outside that band continue through iterative refinement instead of going straight to same-timing confirmation.
-- **Implemented:** fault-injection tests verify optional ROI-mask and ROI-parameter write failures are reported independently, ROI mask dimensions are checked against captured frames, and `roi_available` reflects whether the mask was persisted; optional phase-voltage plot failures do not fail a saved capture, and required raw-stack, partial/full PNG, and metadata failures return a failed save result while preserving artifacts already written.
-- **Verified:** the complete unit suite passes on the Windows target using Python 3.14.7 (139 tests). Phase-capture, view, ROI, profile, camera-controls, dock, runtime, phase-analysis, and recalibration controller contracts pass. Real explicit-session CLI smoke tests on temporary copies completed with `--no-viewer --export`; the full NPZ arrays and all eight result PNGs match the existing baseline exactly, and Fourier diagnostics and RMS/PV metrics remain unchanged. Temporary-tree tests cover latest-session selection. Legacy missing-algorithm fallback remains covered in [`tests/test_phase_psi.py`](../tests/test_phase_psi.py).
-- **Hardware note:** The user has confirmed the physical test is okay. Automated unit tests do not independently certify trigger timing or wiring.
+- `src/mwdriver/domain/`: PSI definitions, recalibration policies, ROI/profile geometry, stream selection, layer visibility, and display-frame preparation.
+- `src/mwdriver/hardware/`: native Thorlabs camera adapter and Pico serial worker.
+- `src/mwdriver/capture/`: phase-capture lifecycle, frame/timestamp policies, save workers, persistence, and phase-check subprocess execution.
+- `src/mwdriver/analysis/`: phase-check CLI implementation, phase-analysis CLI implementation, reconstruction helpers, aberration analysis, plots, and result viewer.
+- `src/mwdriver/ui/`: Napari/Qt controller mixins, controls, application bootstrap, and worker lifecycle.
+- `src/camera.py`: desktop launcher, compatibility facade, and UI composition root.
+- `src/check_measured_vs_expected_phase.py` and `src/phase_analysis_new.py`: retained CLI entry points that delegate to packaged implementations.
+- `pypico/main.py`: independently deployed MicroPython firmware; it remains outside the desktop package.
 
-## Work Plan
+There are no longer top-level mirrors for package implementation modules. Internal code and tests import package paths directly.
 
-1. **Characterise existing contracts (in progress).** Coverage now includes frame-to-phase assignment, timestamps and stale-frame boundaries, native acquisition metadata, capture paths and filenames, phase-check output and failures, Pico command payloads, capture-lifecycle messages and trigger-update acknowledgements, plus recalibration iteration/termination. The physical test is user-confirmed okay; retain it as a manual release check because hardware behaviour is not fully covered by automated tests.
-2. **Finish extracting recalibration logic (in progress).** Value-only trigger generation/spacing, phase interpolation, iterative refinement, candidate scoring, and acceptance/restart decisions now live in Qt-free helpers using an immutable [`RecalibrationConfig`](../src/recalibration.py). Camera-required spacing remains an explicit runtime input. A final review of remaining validation/measurement policy is outstanding; capture scheduling, Pico acknowledgements, UI state, and persistence remain in the controller.
-3. **Separate capture persistence from orchestration (in progress).** Unique session-directory allocation, ROI/raw-stack/PNG/metadata writes, and checker subprocess execution now have focused storage/process boundaries. Phase checking and overall save outcomes use typed result objects. The worker validates selected-algorithm frame count, consistent 2D frame shapes and supplied timing-array lengths before allocating a session; omitted timing arrays are supported. Fault-injection coverage exercises optional ROI and required artifact failure paths. Per-session notebook generation has been removed. Review of atomic replacement for the paired ROI files is deferred; other persistence schemas and failure semantics remain to review.
-4. **Make offline analysis import-safe (completed).** The module imports without session processing, `analyze_capture(...)` returns a result bundle, and phase components, center-out unwrapping, Fourier carrier detection, aberration calculations, chart rendering, and interactive result viewing have callable boundaries. NPZ serialization has an explicit helper. An `argparse` CLI preserves explicit/latest session selection, `--no-viewer`, and `--export`. Real explicit-session smoke tests pass on temporary capture copies; tests cover latest-session selection and the legacy missing-algorithm default.
-5. **Split the GUI and establish packages (in progress).** Camera and Napari initialization, Pico phase-command handling, camera acquisition and stream lifecycle, phase-analysis launch/result loading, recalibration scheduling/retry/finalization, manual capture sampling/save orchestration, phase-capture lifecycle/save orchestration, Napari view/layer coordination, ROI workflow, intensity-profile workflow, camera menu/status/adjustment controls and Napari dock/chrome/resize integration are separate controllers/workers now grouped in `mwdriver.ui`; shared save-worker cleanup remains in `camera.py`. `mwdriver.domain` owns pure PSI, recalibration and geometry modules, `mwdriver.analysis` owns offline analysis algorithms and presentation helpers, `mwdriver.hardware` owns camera/Pico adapters, and `mwdriver.capture` owns capture lifecycle, workers and persistence. Flat imports remain as compatibility shims during migration. Compatibility access remains through `camera.ThorlabsCameraViewer`, `camera.CameraWorker`, `camera.PHASE_ANALYSIS_SCRIPT`, `camera.PhaseSaveResult`, and `camera.NativeThorlabsCamera`. `camera.py` remains the documented launcher and composition root.
+## Verified
 
-## Target Boundaries
+- The complete test suite passes on Windows with Python 3.14.7 (146 tests).
+- Focused tests cover phase assignment, stale-frame rejection, acquisition metadata, trigger ACKs, recalibration policies, save schemas/failure handling, ROI geometry/storage, profile sampling/dragging, controller behaviour, and CLI analysis contracts.
+- Explicit-session analysis smoke tests preserve NPZ arrays, generated PNGs, Fourier diagnostics, and RMS/PV results against the established baseline.
+- The user has confirmed the physical test is okay. Automated tests do not independently verify camera/Pico wiring or trigger timing.
 
-A possible eventual package layout is:
+## Remaining Work
 
-- `mwdriver/domain/`: pure phase and calibration rules.
-- `mwdriver/hardware/`: camera SDK and Pico serial adapters.
-- `mwdriver/capture/`: session paths, persistence, and capture workflow services.
-- `mwdriver/analysis/`: callable phase reconstruction and analysis.
-- `mwdriver/ui/`: Napari/Qt workers, widgets, and orchestration.
-
-Do not move code mechanically just to match this layout. Extract a boundary when it has a coherent responsibility and can be tested independently. Keep `src/camera.py` as a launcher during migration if that helps preserve existing usage.
+- Decide whether to add packaging metadata for installation as a Python distribution. Current supported usage adds `src` to the import path and launches the documented scripts directly.
+- Review whether the two ROI artifacts (`roi_params.json` and `roi_mask.npy`) need atomic paired replacement/recovery. This remains deliberately deferred.
+- Keep `camera.py` as the compatibility facade unless a separate API migration is explicitly undertaken.
 
 ## Contracts To Preserve
 
-- Six-frame acquisition order and existing frame/timestamp association.
-- Pico serial command protocol and hardware trigger timing behavior.
-- Capture directory naming, file names, metadata keys, and raw-stack shape.
-- Existing phase-check and analysis command-line options.
-- Captures without algorithm metadata continue to use the legacy 90-degree method.
-- Existing recalibration artifact cleanup and calibration-save semantics remain unchanged unless explicitly tested and intentionally revised.
-- Keep [`pypico/main.py`](../pypico/main.py) independently deployable; do not combine firmware and desktop restructuring.
-
-## Verification
-
-- Run `python -m unittest discover -s tests -v` in the supported project environment after each extracted boundary.
-- Add focused fake-driven tests for each newly isolated contract, including analysis imports and storage schema.
-- Smoke-test documented analysis commands for explicit sessions, latest-session discovery, `--no-viewer`, and `--export`.
-- On the supported Windows hardware setup, verify Pico acknowledgements, six external-trigger frame order, camera trigger-mode restoration, and a successful post-fix complete capture/recalibration cycle.
-
-## Risks And Open Questions
-
-- Hardware timing and native SDK frame metadata cannot be fully certified by unit tests or on a machine without the supported camera/Pico setup.
-- The optional `phase_shifts.ipynb` template is documented as absent. Confirm whether generated per-capture notebooks remain a supported behavior before changing that path.
-- Recalibration can delete rejected session directories and writes trigger positions during the workflow; preserve these semantics while extracting code.
-- Napari integration uses private Qt APIs and a custom close handler. Treat compatibility work as a separate concern unless a module move requires it.
+- Six-frame acquisition order, frame/timestamp association, and internal/external/internal trigger transitions.
+- Pico serial command protocol and trigger timing behaviour.
+- Capture directory naming, filenames, metadata keys, and raw-stack shape.
+- Existing CLI options and legacy 90-degree fallback for captures without algorithm metadata.
+- Recalibration candidate cleanup and calibration-save semantics.
+- The Pico firmware remains independently deployable.
