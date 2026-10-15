@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import camera_phase_analysis_controller as analysis_controller
 from camera_phase_analysis_controller import CameraPhaseAnalysisController
-from phase_capture_storage import PhaseSaveResult
+from mwdriver.capture.phase_capture_storage import PhaseSaveResult
 
 
 class CameraPhaseAnalysisControllerTests(unittest.TestCase):

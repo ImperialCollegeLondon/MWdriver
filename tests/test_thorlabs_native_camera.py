@@ -8,7 +8,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from mwdriver.hardware.thorlabs_native_camera import NativeThorlabsCamera
-from phase_capture_timestamps import build_phase_timestamp_payload
+from mwdriver.capture.phase_capture_timestamps import build_phase_timestamp_payload
 
 
 ENUMS = SimpleNamespace(

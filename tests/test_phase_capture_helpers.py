@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from phase_capture_frame_filter import (
+from mwdriver.capture.phase_capture_frame_filter import (
     decide_framestamp_phase_slot,
     decide_native_phase_frame,
     decide_phase_frame_assignment,
@@ -14,7 +14,7 @@ from phase_capture_frame_filter import (
     select_queued_phase_slots,
     should_accept_phase_frame,
 )
-from phase_capture_timestamps import (
+from mwdriver.capture.phase_capture_timestamps import (
     build_phase_timestamp_payload,
     normalize_frame_framestamp,
     normalize_frame_timestamp,

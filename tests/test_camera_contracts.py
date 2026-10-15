@@ -16,13 +16,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import camera
-import phase_capture_worker
-from phase_capture_controller import PhaseCaptureController
+import mwdriver.capture.phase_capture_worker as phase_capture_worker
+from mwdriver.capture.phase_capture_controller import PhaseCaptureController
 from application_bootstrap import run_application
 import check_measured_vs_expected_phase as phase_check
 import phase_analysis_new
-from phase_capture_process import PhaseCheckResult, run_phase_check
-from phase_capture_storage import (
+from mwdriver.capture.phase_capture_process import PhaseCheckResult, run_phase_check
+from mwdriver.capture.phase_capture_storage import (
     PhaseSaveResult,
     allocate_capture_session_dir,
     save_roi_snapshots,
@@ -1075,7 +1075,7 @@ class CameraContractTests(unittest.TestCase):
     def test_optional_roi_mask_write_failure_is_reported_without_blocking_params(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             with patch(
-                "phase_capture_storage.np.save",
+                "mwdriver.capture.phase_capture_storage.np.save",
                 side_effect=OSError("mask device unavailable"),
             ):
                 result = save_roi_snapshots(
@@ -1128,7 +1128,7 @@ class CameraContractTests(unittest.TestCase):
 
             with (
                 patch.object(camera.time, "strftime", return_value=timestamp),
-                patch("phase_capture_storage.np.save", side_effect=fail_mask_save),
+                patch("mwdriver.capture.phase_capture_storage.np.save", side_effect=fail_mask_save),
             ):
                 worker.run()
 
@@ -1185,7 +1185,7 @@ class CameraContractTests(unittest.TestCase):
     def test_optional_roi_params_write_failure_is_reported_without_blocking_mask(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             with patch(
-                "phase_capture_storage.json.dump",
+                "mwdriver.capture.phase_capture_storage.json.dump",
                 side_effect=OSError("parameter device unavailable"),
             ):
                 result = save_roi_snapshots(
@@ -1247,7 +1247,7 @@ class CameraContractTests(unittest.TestCase):
             with (
                 patch.object(camera.time, "strftime", return_value=timestamp),
                 patch(
-                    "phase_capture_storage.imageio.imwrite",
+                    "mwdriver.capture.phase_capture_storage.imageio.imwrite",
                     side_effect=fail_after_first_png,
                 ),
                 patch.object(worker, "run_automatic_phase_check") as phase_check,

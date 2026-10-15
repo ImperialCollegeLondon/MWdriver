@@ -4,7 +4,7 @@ import os
 
 from qtpy.QtCore import QThread, QTimer
 
-from manual_capture_worker import FrameSaveWorker
+from mwdriver.capture.manual_capture_worker import FrameSaveWorker
 
 
 MANUAL_CAPTURE_COUNT = 6

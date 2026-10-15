@@ -7,7 +7,7 @@ import sys
 import numpy as np
 from qtpy.QtCore import QTimer
 
-from phase_capture_storage import PhaseSaveResult
+from mwdriver.capture.phase_capture_storage import PhaseSaveResult
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))

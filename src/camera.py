@@ -11,7 +11,7 @@ import numpy as np
 
 import napari
 from application_bootstrap import run_application
-from phase_capture_controller import (
+from mwdriver.capture.phase_capture_controller import (
     PHASE_CAPTURE_COUNT,
     PhaseCaptureController,
 )
@@ -41,8 +41,8 @@ from camera_initialization_controller import CameraInitializationController
 from camera_phase_command_controller import CameraPhaseCommandController
 from mwdriver.hardware.thorlabs_native_camera import NativeThorlabsCamera
 from mwdriver.hardware.pico_serial_worker import PicoSerialWorker
-from phase_capture_worker import PhaseSaveWorker
-from phase_capture_storage import PhaseSaveResult
+from mwdriver.capture.phase_capture_worker import PhaseSaveWorker
+from mwdriver.capture.phase_capture_storage import PhaseSaveResult
 from mwdriver.domain.recalibration import (
     DEFAULT_RECALIBRATION_CONFIG,
 )
