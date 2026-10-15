@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import camera
 import mwdriver.capture.phase_capture_worker as phase_capture_worker
 from mwdriver.capture.phase_capture_controller import PhaseCaptureController
-from application_bootstrap import run_application
+from mwdriver.ui.application_bootstrap import run_application
 import check_measured_vs_expected_phase as phase_check
 import phase_analysis_new
 from mwdriver.capture.phase_capture_process import PhaseCheckResult, run_phase_check

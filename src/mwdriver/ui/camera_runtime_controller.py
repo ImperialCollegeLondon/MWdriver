@@ -8,7 +8,7 @@ from qtpy.QtCore import QObject, QThread, Signal
 from mwdriver.domain.camera_frames import prepare_display_frame
 from mwdriver.hardware.pico_serial_worker import PicoSerialWorker
 from mwdriver.domain.stream_policy import get_camera_stream_mode
-from worker_lifecycle import stop_worker_thread
+from mwdriver.ui.worker_lifecycle import stop_worker_thread
 
 
 class CameraWorker(QObject):

@@ -1,9 +1,5 @@
-"""Small ordered lifecycle operations for Qt worker threads."""
+"""Compatibility re-export for the packaged Qt worker lifecycle helper."""
 
+from mwdriver.ui.worker_lifecycle import stop_worker_thread
 
-def stop_worker_thread(worker, thread):
-    if worker is not None:
-        worker.stop()
-    if thread is not None:
-        thread.quit()
-        thread.wait()
+__all__ = ["stop_worker_thread"]

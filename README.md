@@ -13,7 +13,7 @@ the desktop application coordinates acquisition and saves captures for analysis.
 | `src/mwdriver/hardware/thorlabs_native_camera.py` | Native Thorlabs TSI SDK backend: camera discovery, acquisition, trigger switching, copied frames and timestamps. |
 | `src/mwdriver/hardware/pico_serial_worker.py` | Pico serial protocol and capture-lifecycle worker. |
 | `src/thorlabs_native_camera.py`, `src/pico_serial_worker.py` | Compatibility shims re-exporting the packaged hardware adapters. |
-| `src/mwdriver/ui/` | Napari/Qt controller mixins for viewer, camera, capture controls, profiles, ROI, recalibration, and dock layout. |
+| `src/mwdriver/ui/` | Napari/Qt controller mixins, application bootstrap, and worker lifecycle for viewer, camera, capture controls, profiles, ROI, recalibration, and dock layout. |
 | `src/camera.py` | Compatibility launcher and composition root for the packaged UI controllers. |
 | `src/mwdriver/capture/` | Phase-capture controller, workers, frame/timestamp policies, persistence, and phase-check subprocess. |
 | `src/phase_capture_*.py`, `src/manual_capture_worker.py` | Compatibility shims re-exporting packaged capture APIs. |

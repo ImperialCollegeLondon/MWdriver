@@ -10,7 +10,7 @@ import numpy as np
 
 
 import napari
-from application_bootstrap import run_application
+from mwdriver.ui.application_bootstrap import run_application
 from mwdriver.capture.phase_capture_controller import (
     PHASE_CAPTURE_COUNT,
     PhaseCaptureController,
