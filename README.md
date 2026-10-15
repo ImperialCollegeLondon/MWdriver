@@ -12,7 +12,7 @@ the desktop application coordinates acquisition and saves captures for analysis.
 | `src/camera.py` | Desktop launcher, compatibility facade, and composition root for the Napari/Qt viewer. |
 | `src/check_measured_vs_expected_phase.py` | Phase-check CLI entry point used by saved-capture workflows. |
 | `src/phase_analysis_new.py` | Offline phase-analysis CLI entry point. |
-| `src/mwdriver/domain/` | Hardware-independent PSI, calibration, ROI/profile geometry, streaming, visibility, and frame policies. |
+| `src/mwdriver/domain/` | Hardware-independent PSI, calibration, ROI geometry, streaming, visibility, and frame policies. |
 | `src/mwdriver/hardware/` | Native Thorlabs camera adapter and Pico serial worker. |
 | `src/mwdriver/capture/` | Phase-capture lifecycle, frame/timestamp policy, workers, persistence, and checker process. |
 | `src/mwdriver/analysis/` | Phase reconstruction, unwrapping, Fourier, aberration, plotting, and result-viewing implementations. |

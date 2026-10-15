@@ -88,12 +88,6 @@ class PhaseCaptureController:
         self.pending_phase_indices = []
         self.unassigned_triggered_frames = []
 
-        # Important:
-        # Phase capture must prioritize receiving all 6 hardware-triggered raw frames.
-        # Temporarily disable intensity-profile plot updates during the external-trigger window.
-        self.profile_enabled_before_phase_capture = self.profile_enabled
-        self.profile_enabled = False
-
         self.phase_label.setText(
             "Phase Capture: Started, switching to external trigger"
         )
@@ -442,9 +436,6 @@ class PhaseCaptureController:
             print("Resume permitted live preview warning:", e)
 
         self.switching_camera_mode = False
-
-        # Restore intensity-profile state after phase capture.
-        self.profile_enabled = self.profile_enabled_before_phase_capture
 
         self.status_label.setText("Status: Returned to live view")
         self.phase_label.setText("Phase Capture: Live view resumed")

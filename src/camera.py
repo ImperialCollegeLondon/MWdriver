@@ -23,7 +23,6 @@ from mwdriver.ui.camera_controls_controller import (
 )
 from mwdriver.ui.camera_roi_controller import CameraRoiController
 from mwdriver.ui.camera_view_controller import CameraViewController
-from mwdriver.ui.camera_profile_controller import CameraProfileController
 from mwdriver.ui.camera_dock_controller import CameraDockController
 from mwdriver.ui.camera_phase_analysis_controller import (
     CameraPhaseAnalysisController,
@@ -99,7 +98,6 @@ class ThorlabsCameraViewer(
     PhaseCaptureController,
     CameraViewController,
     CameraRoiController,
-    CameraProfileController,
     CameraControlsController,
     CameraDockController,
     CameraRuntimeController,
@@ -162,7 +160,6 @@ class ThorlabsCameraViewer(
         self.display_mask_enabled = False
         self.current_display_mask = None
 
-        self.initialize_profile_controller_state()
         self.latest_raw_frame = None
         self.latest_display_frame = None
         self.camera_adjust_widget = None
@@ -222,7 +219,6 @@ class ThorlabsCameraViewer(
         self.init_viewer()
         self.init_controls()
         self.init_roi_controls()
-        self.init_profile_controls()
         self.init_mwdriver_controls_dock()
 
         self.load_active_trigger_positions_from_json()
@@ -322,11 +318,6 @@ class ThorlabsCameraViewer(
             self.stop_pico_listener()
         except Exception as e:
             print("Error while stopping Pico listener:", e)
-
-        try:
-            self.clear_intensity_profile()
-        except Exception as e:
-            print("Error while clearing intensity profile:", e)
 
         try:
             self.stop_stream()

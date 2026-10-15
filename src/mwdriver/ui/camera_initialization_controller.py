@@ -93,11 +93,3 @@ class CameraInitializationController:
         except Exception as e:
             print("Layer controls active-change hook warning:", e)
 
-        try:
-            if self.on_profile_mouse_drag in self.viewer.mouse_drag_callbacks:
-                self.viewer.mouse_drag_callbacks.remove(self.on_profile_mouse_drag)
-
-            self.viewer.mouse_drag_callbacks.append(self.on_profile_mouse_drag)
-            print("Viewer-level profile mouse drag callback connected.")
-        except Exception as e:
-            print("Viewer-level profile mouse drag callback warning:", e)

@@ -35,7 +35,6 @@ from mwdriver.domain.recalibration import (
     select_best_recalibration_candidate,
 )
 from mwdriver.ui.roi_controls import create_roi_menu
-from mwdriver.ui.profile_controls import create_profile_controls
 from mwdriver.ui.phase_analysis_controls import (
     build_analysis_layer_presentation,
     build_phase_analysis_result_options,
@@ -364,17 +363,6 @@ class CameraContractTests(unittest.TestCase):
         )
 
         self.assertEqual(viewer.closed_count, 1)
-
-    def test_profile_controls_widget_has_expected_buttons(self):
-        application = QApplication.instance() or QApplication([])
-        widget, profile_button, clear_button = create_profile_controls()
-        self.addCleanup(widget.deleteLater)
-        self.assertIsNotNone(application)
-        self.assertEqual(widget.objectName(), "embedded_profile_controls")
-        self.assertEqual(profile_button.text(), "Intensity Profile")
-        self.assertEqual(clear_button.text(), "Clear Profile")
-        self.assertEqual(profile_button.minimumHeight(), 28)
-        self.assertEqual(clear_button.minimumHeight(), 28)
 
     def test_phase_analysis_controls_widget_connects_view_callbacks(self):
         application = QApplication.instance() or QApplication([])

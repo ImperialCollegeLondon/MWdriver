@@ -157,7 +157,6 @@ class CameraDockController:
             should_show = text in allowed_labels
             self.set_control_row_visible(label, should_show)
 
-        self.place_profile_controls_in_layer_controls()
         self.place_camera_adjust_controls_in_layer_controls()
         self.place_camera_status_controls_in_layer_controls()
         self.place_phase_analysis_controls_in_layer_controls()
@@ -248,7 +247,6 @@ class CameraDockController:
         )
 
         self.add_widget_to_mwdriver_dock(self.camera_adjust_widget)
-        self.add_widget_to_mwdriver_dock(self.profile_controls_widget)
         self.add_widget_to_mwdriver_dock(self.camera_status_widget)
 
     def add_widget_to_mwdriver_dock(self, widget):
@@ -380,7 +378,6 @@ class CameraDockController:
         """
 
         try:
-            self.place_profile_controls_in_layer_controls()
             self.place_camera_adjust_controls_in_layer_controls()
             self.place_camera_status_controls_in_layer_controls()
             self.place_phase_analysis_controls_in_layer_controls()

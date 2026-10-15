@@ -51,22 +51,11 @@ class CameraViewController:
 
             self.sync_stream_with_active_layer()
 
-            if (
-                self.profile_enabled
-                and self.profile_layer is not None
-                and active_layer is self.profile_layer
-            ):
-                QTimer.singleShot(
-                    0,
-                    lambda: setattr(self.viewer.layers.selection, "active", self.layer)
-                )
-
         except Exception as e:
             print("Active layer change handling warning:", e)
 
         QTimer.singleShot(100, self.simplify_layer_controls)
         QTimer.singleShot(150, self.simplify_napari_interface)
-        QTimer.singleShot(200, self.place_profile_controls_in_layer_controls)
         QTimer.singleShot(250, self.place_camera_adjust_controls_in_layer_controls)
         QTimer.singleShot(300, self.place_camera_status_controls_in_layer_controls)
 

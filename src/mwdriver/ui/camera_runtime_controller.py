@@ -232,8 +232,6 @@ class CameraRuntimeController:
 
         self.layer.data = display_frame
 
-        self.update_intensity_profile()
-
     def update_fps(self, fps):
         self.fps_label.setText(f"FPS: {fps:.1f}")
 
