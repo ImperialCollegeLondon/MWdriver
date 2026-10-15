@@ -6,8 +6,9 @@ import sys
 import time
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.figure import Figure
 from qtpy.QtCore import QObject, Signal
 
 from mwdriver.capture.phase_capture_process import run_phase_check
@@ -126,7 +127,9 @@ class PhaseSaveWorker(QObject):
                 self.voltage_mapper(position_ms)
                 for position_ms in self.trigger_positions_ms
             ]
-            figure, axis = plt.subplots(figsize=(7, 5))
+            figure = Figure(figsize=(7, 5))
+            FigureCanvasAgg(figure)
+            axis = figure.subplots()
             axis.plot(measured_phase_deg, voltages, "o-", color="tab:blue")
             for index, (voltage, phase) in enumerate(zip(voltages, measured_phase_deg)):
                 axis.annotate(
@@ -146,7 +149,6 @@ class PhaseSaveWorker(QObject):
                 f"phase_vs_voltage_{timestamp}.png",
             )
             figure.savefig(plot_path, dpi=150)
-            plt.close(figure)
             print("Saved phase-vs-voltage plot:", plot_path)
             self.status_ready.emit(f"Saved phase-vs-voltage plot: {plot_path}")
             return plot_path

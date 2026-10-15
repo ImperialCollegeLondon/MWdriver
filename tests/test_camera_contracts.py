@@ -1046,6 +1046,25 @@ class CameraContractTests(unittest.TestCase):
             self.assertTrue(Path(result.raw_stack_path).is_file())
             self.assertTrue(Path(result.metadata_path).is_file())
 
+    def test_phase_voltage_plot_uses_headless_agg_renderer(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            worker = camera.PhaseSaveWorker(
+                frames=[],
+                save_dir=temporary_directory,
+                trigger_positions_ms=[100, 190, 280, 370, 460, 550],
+                voltage_mapper=lambda position: position / 200.0,
+            )
+
+            plot_path = worker.save_phase_vs_voltage_plot(
+                temporary_directory,
+                "20261015_120000",
+                [0, 60, 120, 180, 240, 300],
+            )
+
+            self.assertIsNotNone(plot_path)
+            self.assertTrue(Path(plot_path).is_file())
+            self.assertGreater(Path(plot_path).stat().st_size, 0)
+
     def test_phase_save_worker_reports_storage_failure(self):
         frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
         with tempfile.TemporaryDirectory() as temporary_directory:
