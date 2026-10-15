@@ -29,7 +29,8 @@ the desktop application coordinates acquisition and saves captures for analysis.
 | `src/mwdriver/domain/stream_policy.py` | Packaged camera preview/capture/stopped mode selection. |
 | `src/mwdriver/domain/layer_visibility.py` | Packaged visibility plans for camera, ROI, analysis, and time-series layers. |
 | `src/mwdriver/domain/camera_frames.py` | Packaged raw-to-display frame downsampling and contiguous-array preparation. |
-| `src/check_measured_vs_expected_phase.py` | Non-interactive FFT-based check against phase positions recorded in each capture session; saves JSON diagnostics and an annotated plot. |
+| `src/mwdriver/analysis/check_measured_vs_expected_phase.py` | Non-interactive FFT-based check against phase positions recorded in each capture session; saves JSON diagnostics and an annotated plot. |
+| `src/check_measured_vs_expected_phase.py` | Compatibility CLI shim used by existing launch commands and capture workers. |
 | `src/phase_analysis_new.py` | Mode-selected six-frame phase reconstruction, unwrapping, and Zernike/aberration analysis, with saved images and an optional viewer/export. |
 | `src/mwdriver/analysis/` | Packaged phase unwrapping, Fourier carrier detection, aberration fitting, diagnostic plotting, and interactive result viewing. |
 | `src/phase_unwrap.py`, `src/phase_fourier.py`, `src/phase_aberration.py`, `src/phase_analysis_plots.py`, `src/phase_analysis_viewer.py` | Compatibility shims re-exporting the packaged analysis APIs. |
