@@ -7,7 +7,7 @@ from qtpy.QtCore import QTimer
 from qtpy.QtGui import QAction
 from qtpy.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from roi_geometry import (
+from mwdriver.domain.roi_geometry import (
     apply_mask_to_frame,
     build_inside_mask,
     build_roi_selection,

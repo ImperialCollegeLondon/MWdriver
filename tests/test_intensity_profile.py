@@ -6,7 +6,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from intensity_profile import (
+from mwdriver.domain.intensity_profile import (
     build_initial_profile_line,
     clamp_profile_line,
     move_profile_line,

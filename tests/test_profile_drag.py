@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from profile_drag import distance_point_to_segment, get_line_drag_target
+from mwdriver.domain.profile_drag import distance_point_to_segment, get_line_drag_target
 
 
 class ProfileDragTests(unittest.TestCase):

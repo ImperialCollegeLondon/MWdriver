@@ -5,13 +5,13 @@ import matplotlib.pyplot as plt
 from qtpy.QtCore import QTimer
 
 from profile_controls import create_profile_controls
-from intensity_profile import (
+from mwdriver.domain.intensity_profile import (
     build_initial_profile_line,
     clamp_profile_line,
     move_profile_line,
     sample_line_profile as sample_raw_line_profile,
 )
-from profile_drag import get_line_drag_target
+from mwdriver.domain.profile_drag import get_line_drag_target
 
 
 class CameraProfileController:
