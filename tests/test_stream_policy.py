@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from stream_policy import get_camera_stream_mode
+from mwdriver.domain.stream_policy import get_camera_stream_mode
 
 
 class CameraStreamPolicyTests(unittest.TestCase):

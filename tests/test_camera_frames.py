@@ -6,7 +6,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from camera_frames import prepare_display_frame
+from mwdriver.domain.camera_frames import prepare_display_frame
 
 
 class CameraFrameTests(unittest.TestCase):

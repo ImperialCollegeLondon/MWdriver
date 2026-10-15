@@ -28,6 +28,9 @@ the desktop application coordinates acquisition and saves captures for analysis.
 | `src/mwdriver/domain/roi_geometry.py` | Packaged pure ROI conversion, mask, and display-frame geometry. |
 | `src/mwdriver/domain/intensity_profile.py` | Packaged line placement, movement, and raw-frame sampling geometry. |
 | `src/mwdriver/domain/profile_drag.py` | Packaged profile-line hit testing and drag-target geometry. |
+| `src/mwdriver/domain/stream_policy.py` | Packaged camera preview/capture/stopped mode selection. |
+| `src/mwdriver/domain/layer_visibility.py` | Packaged visibility plans for camera, ROI, analysis, and time-series layers. |
+| `src/mwdriver/domain/camera_frames.py` | Packaged raw-to-display frame downsampling and contiguous-array preparation. |
 | `src/check_measured_vs_expected_phase.py` | Non-interactive FFT-based check against phase positions recorded in each capture session; saves JSON diagnostics and an annotated plot. |
 | `src/phase_analysis_new.py` | Mode-selected six-frame phase reconstruction, unwrapping, and Zernike/aberration analysis, with saved images and an optional viewer/export. |
 | `src/mwdriver/analysis/` | Packaged phase unwrapping, Fourier carrier detection, aberration fitting, diagnostic plotting, and interactive result viewing. |

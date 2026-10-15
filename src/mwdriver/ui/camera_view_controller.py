@@ -2,14 +2,14 @@
 
 from qtpy.QtCore import QTimer
 
-from layer_visibility import build_layer_visibility_plan
+from mwdriver.domain.layer_visibility import build_layer_visibility_plan
 from phase_analysis_controls import (
     build_analysis_layer_presentation,
     build_phase_analysis_result_options,
     choose_analysis_layer_operation,
     create_phase_analysis_controls,
 )
-from stream_policy import get_camera_stream_mode
+from mwdriver.domain.stream_policy import get_camera_stream_mode
 
 
 class CameraViewController:

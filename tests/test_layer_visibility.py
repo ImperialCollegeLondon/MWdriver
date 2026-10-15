@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from layer_visibility import build_layer_visibility_plan
+from mwdriver.domain.layer_visibility import build_layer_visibility_plan
 
 
 class LayerVisibilityTests(unittest.TestCase):
