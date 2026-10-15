@@ -6,7 +6,7 @@ import numpy as np
 from qtpy.QtCore import QObject, QThread, Signal
 
 from camera_frames import prepare_display_frame
-from pico_serial_worker import PicoSerialWorker
+from mwdriver.hardware.pico_serial_worker import PicoSerialWorker
 from stream_policy import get_camera_stream_mode
 from worker_lifecycle import stop_worker_thread
 

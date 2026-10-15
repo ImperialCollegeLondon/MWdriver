@@ -10,7 +10,9 @@ the desktop application coordinates acquisition and saves captures for analysis.
 | File | Role |
 | --- | --- |
 | `src/camera.py` | Napari/Qt desktop controller: live view, ROI selection, six-frame capture, trigger recalibration, and analysis launching. |
-| `src/thorlabs_native_camera.py` | Native Thorlabs TSI SDK backend: camera discovery, acquisition, trigger switching, copied frames and timestamps. |
+| `src/mwdriver/hardware/thorlabs_native_camera.py` | Native Thorlabs TSI SDK backend: camera discovery, acquisition, trigger switching, copied frames and timestamps. |
+| `src/mwdriver/hardware/pico_serial_worker.py` | Pico serial protocol and capture-lifecycle worker. |
+| `src/thorlabs_native_camera.py`, `src/pico_serial_worker.py` | Compatibility shims re-exporting the packaged hardware adapters. |
 | `src/phase_capture_timestamps.py` | Timestamp payload and camera frame-timestamp normalization helpers used by the capture controller. |
 | `src/phase_capture_frame_filter.py` | Frame acceptance helper used by the capture controller. |
 | `src/mwdriver/domain/phase_psi.py` | Packaged six-frame PSI definitions and 90-degree / 60-degree wrapped-phase estimators. |

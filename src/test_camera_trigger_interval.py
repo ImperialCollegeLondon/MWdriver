@@ -8,7 +8,7 @@ from pathlib import Path
 
 import serial
 
-from thorlabs_native_camera import NativeThorlabsCamera
+from mwdriver.hardware.thorlabs_native_camera import NativeThorlabsCamera
 
 
 def send_command(port, command):

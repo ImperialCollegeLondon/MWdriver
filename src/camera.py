@@ -39,8 +39,8 @@ from camera_manual_capture_controller import (
 )
 from camera_initialization_controller import CameraInitializationController
 from camera_phase_command_controller import CameraPhaseCommandController
-from thorlabs_native_camera import NativeThorlabsCamera
-from pico_serial_worker import PicoSerialWorker
+from mwdriver.hardware.thorlabs_native_camera import NativeThorlabsCamera
+from mwdriver.hardware.pico_serial_worker import PicoSerialWorker
 from phase_capture_worker import PhaseSaveWorker
 from phase_capture_storage import PhaseSaveResult
 from mwdriver.domain.recalibration import (

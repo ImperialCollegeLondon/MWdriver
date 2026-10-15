@@ -4,7 +4,7 @@ import napari
 import numpy as np
 from qtpy.QtCore import QTimer
 
-from thorlabs_native_camera import NativeThorlabsCamera
+from mwdriver.hardware.thorlabs_native_camera import NativeThorlabsCamera
 
 
 class CameraInitializationController:

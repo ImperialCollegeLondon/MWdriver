@@ -7,7 +7,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from thorlabs_native_camera import NativeThorlabsCamera
+from mwdriver.hardware.thorlabs_native_camera import NativeThorlabsCamera
 from phase_capture_timestamps import build_phase_timestamp_payload
 
 
