@@ -158,14 +158,14 @@ one frame per hardware trigger. Native frame buffers are copied before the
 next poll. Saved camera timestamps are SDK-relative nanoseconds, with
 `timestamp_clock_frequency_hz` set to 1,000,000,000 to match those units;
 they are not host wall-clock timestamps.
+
 Offline analysis needs only NumPy and Matplotlib.
-- The timestamp and frame-filter helper modules are included in `src/`.
-   The optional notebook template `src/phase_shifts.ipynb` is not included.
+- The optional notebook template `src/phase_shifts.ipynb` is not included.
 - **Hardware:** a supported Thorlabs camera with external triggering, a Pico
-  running MicroPython, and the phase-shifter drive/interface circuitry.
-  Firmware pins are GP15 (PWM waveform), GP12 (camera trigger), and GP27 (buzzer).
-  Use appropriate signal conditioning and compatible voltage levels; GP15 is
-  PWM, not a direct analog output.
+   running MicroPython, and the phase-shifter drive/interface circuitry.
+   Firmware pins are GP15 (PWM waveform), GP12 (camera trigger), and GP27 (buzzer).
+   Use appropriate signal conditioning and compatible voltage levels; GP15 is
+   PWM, not a direct analogue output.
 - Set `PICO_PORT` in `camera.py` to the Pico's serial port (default `COM4`);
   `PICO_BAUDRATE` defaults to 115200.
 
@@ -233,4 +233,4 @@ The checker writes `measured_phase_check.json` and
 `measured_vs_expected_phase_annotated.png` into the session folder. Full analysis
 saves intermediate PNGs and `phase_analysis_result_images/` there. Review
 analysis constants for your optical setup, particularly `WAVELENGTH_NM`
-(currently 632.8) in `phase_analysis_new.py`.
+(currently 632.8) in `src/mwdriver/analysis/phase_analysis_new.py`.
