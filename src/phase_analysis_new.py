@@ -5,6 +5,6 @@ import sys
 from mwdriver.analysis import phase_analysis_new as _implementation
 
 if __name__ == "__main__":
-    raise SystemExit(_implementation.main())
+    _implementation.main()
 
 sys.modules[__name__] = _implementation
