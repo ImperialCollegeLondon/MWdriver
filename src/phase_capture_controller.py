@@ -23,7 +23,7 @@ from phase_capture_timestamps import (
 from phase_capture_storage import PhaseSaveResult
 from phase_capture_worker import PhaseSaveWorker
 from mwdriver.domain.phase_psi import get_algorithm as get_psi_algorithm
-from recalibration import (
+from mwdriver.domain.recalibration import (
     DEFAULT_RECALIBRATION_CONFIG,
     decide_incomplete_capture_action,
     decide_verification_capture_action,

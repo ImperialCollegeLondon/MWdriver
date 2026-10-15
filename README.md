@@ -15,6 +15,8 @@ the desktop application coordinates acquisition and saves captures for analysis.
 | `src/phase_capture_frame_filter.py` | Frame acceptance helper used by the capture controller. |
 | `src/mwdriver/domain/phase_psi.py` | Packaged six-frame PSI definitions and 90-degree / 60-degree wrapped-phase estimators. |
 | `src/phase_psi.py` | Compatibility shim re-exporting the packaged PSI API for existing imports. |
+| `src/mwdriver/domain/recalibration.py` | Packaged pure trigger-position, measurement-validation, and recalibration-candidate policies. |
+| `src/recalibration.py` | Compatibility shim re-exporting the packaged recalibration API for existing imports. |
 | `src/check_measured_vs_expected_phase.py` | Non-interactive FFT-based check against phase positions recorded in each capture session; saves JSON diagnostics and an annotated plot. |
 | `src/phase_analysis_new.py` | Mode-selected six-frame phase reconstruction, unwrapping, and Zernike/aberration analysis, with saved images and an optional viewer/export. |
 | `pypico/main.py` | Pico/MicroPython firmware: triangle-wave timing, six trigger pulses, and USB serial commands/status. |

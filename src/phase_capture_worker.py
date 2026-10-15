@@ -21,7 +21,7 @@ from phase_capture_storage import (
     validate_phase_frame_stack,
 )
 from mwdriver.domain.phase_psi import DEFAULT_ALGORITHM
-from recalibration import DEFAULT_RECALIBRATION_CONFIG
+from mwdriver.domain.recalibration import DEFAULT_RECALIBRATION_CONFIG
 
 
 MODULE_DIR = Path(__file__).resolve().parent

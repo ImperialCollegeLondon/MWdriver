@@ -6,7 +6,7 @@ import time
 import serial
 from qtpy.QtCore import QObject, Signal
 
-from recalibration import DEFAULT_RECALIBRATION_CONFIG
+from mwdriver.domain.recalibration import DEFAULT_RECALIBRATION_CONFIG
 
 
 PHASE_CAPTURE_COUNT = DEFAULT_RECALIBRATION_CONFIG.frame_count

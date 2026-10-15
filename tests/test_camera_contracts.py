@@ -28,7 +28,7 @@ from phase_capture_storage import (
     save_roi_snapshots,
 )
 from mwdriver.domain.phase_psi import SIX_BUCKET_60_DEG
-from recalibration import (
+from mwdriver.domain.recalibration import (
     DEFAULT_RECALIBRATION_CONFIG,
     compute_iterative_refined_positions_ms,
     decide_verification_capture_action,

@@ -43,7 +43,7 @@ from thorlabs_native_camera import NativeThorlabsCamera
 from pico_serial_worker import PicoSerialWorker
 from phase_capture_worker import PhaseSaveWorker
 from phase_capture_storage import PhaseSaveResult
-from recalibration import (
+from mwdriver.domain.recalibration import (
     DEFAULT_RECALIBRATION_CONFIG,
 )
 from mwdriver.domain.phase_psi import (
