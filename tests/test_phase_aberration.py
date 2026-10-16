@@ -48,6 +48,19 @@ class PhaseAberrationTests(unittest.TestCase):
         self.assertAlmostEqual(result.pupil_center_x, 31.5)
         self.assertAlmostEqual(result.pupil_center_y, 31.5)
 
+    def test_reported_pv_uses_point_one_to_ninety_nine_point_nine_percentiles(self):
+        phase, valid = self.make_pupil()
+        phase.data[31, 31] += 20.0
+
+        result = analyze_aberration(phase, valid, wavelength_nm=632.8)
+
+        wavefront = result.wavefront_aberration_nm.compressed()
+        expected_pv = np.percentile(wavefront, 99.9) - np.percentile(
+            wavefront,
+            0.1,
+        )
+        self.assertAlmostEqual(result.aberration_pv_nm, expected_pv)
+
     def test_analysis_recovers_secondary_spherical_j22_content(self):
         yy, xx = np.indices((64, 64))
         center = 31.5
@@ -171,6 +184,55 @@ class PhaseAberrationTests(unittest.TestCase):
             0.0,
             atol=1e-10,
         )
+
+    def test_signal_mask_does_not_shift_original_roi_coordinate_origin(self):
+        yy, xx = np.indices((80, 80), dtype=float)
+        center_y = 38.0
+        center_x = 42.0
+        angle = np.deg2rad(27.0)
+        first_axis = np.asarray([
+            np.sin(angle) * 29.0,
+            np.cos(angle) * 29.0,
+        ])
+        second_axis = np.asarray([
+            np.cos(angle) * 17.0,
+            -np.sin(angle) * 17.0,
+        ])
+        center = np.asarray([center_y, center_x])
+        vertices = np.asarray([
+            center - first_axis - second_axis,
+            center + first_axis - second_axis,
+            center + first_axis + second_axis,
+            center - first_axis + second_axis,
+        ])
+        transform = np.column_stack((first_axis, second_axis))
+        local = np.linalg.inv(transform) @ np.stack((
+            yy - center_y,
+            xx - center_x,
+        )).reshape(2, -1)
+        local_y = local[0].reshape(xx.shape)
+        local_x = local[1].reshape(yy.shape)
+        roi_mask = local_x ** 2 + local_y ** 2 <= 1.0
+        analysis_mask = roi_mask & (xx >= center_x)
+        phase = np.ma.masked_array(
+            0.03 * xx + 0.02 * yy,
+            mask=~analysis_mask,
+        )
+
+        result = analyze_aberration(
+            phase,
+            analysis_mask,
+            wavelength_nm=632.8,
+            pupil_vertices=vertices,
+            coordinate_mask=roi_mask,
+        )
+
+        roi_y, roi_x = np.nonzero(roi_mask)
+        self.assertAlmostEqual(result.pupil_center_x, np.mean(roi_x))
+        self.assertAlmostEqual(result.pupil_center_y, np.mean(roi_y))
+        self.assertAlmostEqual(result.zernike_center_x, center_x)
+        self.assertAlmostEqual(result.zernike_center_y, center_y)
+        self.assertTrue(np.all(result.fit_mask <= analysis_mask))
 
     def test_tilt_removal_eliminates_plane_on_tilted_ellipse_mask(self):
         yy, xx = np.indices((64, 64), dtype=float)

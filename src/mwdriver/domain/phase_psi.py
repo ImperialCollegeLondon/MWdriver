@@ -59,6 +59,26 @@ def phase_components(frames, algorithm_id=DEFAULT_ALGORITHM):
     return numerator, denominator
 
 
+def build_psi_valid_mask(numerator, denominator, roi_mask):
+    """Intersect an ROI with pixels above the full-image mean PSI magnitude."""
+    numerator = np.asarray(numerator, dtype=np.float64)
+    denominator = np.asarray(denominator, dtype=np.float64)
+    roi_mask = np.asarray(roi_mask, dtype=bool)
+    if (
+        numerator.ndim != 2
+        or denominator.shape != numerator.shape
+        or roi_mask.shape != numerator.shape
+    ):
+        raise ValueError("PSI components and ROI mask must have matching 2D shapes.")
+
+    magnitude = np.hypot(numerator, denominator)
+    finite_image = np.isfinite(magnitude)
+    if not np.any(finite_image):
+        raise ValueError("The image contains no finite PSI signal values.")
+    magnitude_threshold = float(np.mean(magnitude[finite_image]))
+    return roi_mask & finite_image & (magnitude > magnitude_threshold)
+
+
 def reconstruct_phase(frames, algorithm_id=DEFAULT_ALGORITHM):
     """Recover wrapped phase from six intensity frames along axis zero."""
     numerator, denominator = phase_components(frames, algorithm_id)

@@ -2,6 +2,7 @@
 
 import numpy as np
 from qtpy.QtWidgets import QComboBox, QLabel, QPushButton, QVBoxLayout, QWidget
+from mwdriver.domain.display_range import percentile_display_limits
 
 
 def choose_analysis_layer_operation(
@@ -26,7 +27,7 @@ def build_phase_analysis_result_options(phase_analysis_results):
         aberration_label = (
             f"Primary defocus removed; higher modes retained: "
             f"RMS {float(aberration_rms):.2f} nm, "
-            f"PV {float(aberration_pv):.2f} nm"
+            f"PV (0.1-99.9%) {float(aberration_pv):.2f} nm"
         )
 
     result_options = [
@@ -64,11 +65,9 @@ def build_analysis_layer_presentation(result_key, result_data, source_name, resu
 
     contrast_limits = None
     if not is_rgb:
-        finite_values = result_data[np.isfinite(result_data)]
-        if finite_values.size:
-            limits = (float(np.min(finite_values)), float(np.max(finite_values)))
-            if limits[0] != limits[1]:
-                contrast_limits = limits
+        limits = percentile_display_limits(result_data)
+        if limits is not None and not np.isclose(limits[0], limits[1]):
+            contrast_limits = limits
 
     return {
         "name": f"Analysis [{source_name or 'unknown stack'}]: {result_name}",

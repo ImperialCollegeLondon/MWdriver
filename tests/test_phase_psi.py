@@ -11,6 +11,7 @@ from mwdriver.domain.phase_psi import (
     ALGORITHMS,
     LEGACY_90_DEG,
     SIX_BUCKET_60_DEG,
+    build_psi_valid_mask,
     get_algorithm,
     get_algorithm_id_from_metadata,
     phase_components,
@@ -52,6 +53,53 @@ class PhaseReconstructionTests(unittest.TestCase):
     def test_reconstruction_requires_six_frames(self):
         with self.assertRaises(ValueError):
             reconstruct_phase(np.zeros((5, 2, 2)), SIX_BUCKET_60_DEG)
+
+    def test_psi_valid_mask_uses_full_image_mean_then_intersects_roi(self):
+        numerator = np.asarray([[1.0, 2.0, 10.0], [4.0, 8.0, 1.0]])
+        denominator = np.zeros_like(numerator)
+        roi_mask = np.asarray([[True, True, True], [True, True, False]])
+
+        valid = build_psi_valid_mask(numerator, denominator, roi_mask)
+
+        np.testing.assert_array_equal(
+            valid,
+            [[False, False, True], [False, True, False]],
+        )
+
+    def test_weak_background_lowers_cutoff_but_is_not_added_to_roi(self):
+        numerator = np.asarray([[20.0, 21.0, 0.0], [22.0, 23.0, 0.0]])
+        denominator = np.zeros_like(numerator)
+        roi_mask = np.asarray([[True, True, False], [True, True, False]])
+
+        valid = build_psi_valid_mask(numerator, denominator, roi_mask)
+
+        np.testing.assert_array_equal(
+            valid,
+            [[True, True, False], [True, True, False]],
+        )
+
+    def test_psi_valid_mask_ignores_nonfinite_pixels_and_rejects_empty_image(self):
+        numerator = np.asarray([[1.0, np.nan], [3.0, 5.0]])
+        denominator = np.zeros_like(numerator)
+        roi_mask = np.ones((2, 2), dtype=bool)
+
+        valid = build_psi_valid_mask(numerator, denominator, roi_mask)
+
+        np.testing.assert_array_equal(valid, [[False, False], [False, True]])
+        with self.assertRaisesRegex(ValueError, "no finite PSI"):
+            build_psi_valid_mask(
+                np.full((2, 2), np.nan),
+                denominator,
+                roi_mask,
+            )
+
+    def test_psi_valid_mask_rejects_mismatched_shapes(self):
+        with self.assertRaisesRegex(ValueError, "matching 2D shapes"):
+            build_psi_valid_mask(
+                np.zeros((2, 2)),
+                np.zeros((2, 3)),
+                np.ones((2, 2), dtype=bool),
+            )
 
     def test_reconstruction_rejects_unknown_algorithm(self):
         with self.assertRaises(ValueError):

@@ -139,11 +139,21 @@ def analyze_aberration(
     wavelength_nm,
     zernike_modes=ZERNIKE_MODES,
     pupil_vertices=None,
+    coordinate_mask=None,
 ):
     phase = np.ma.asarray(unwrapped_phase, dtype=np.float64)
     valid_mask = np.asarray(valid_mask, dtype=bool)
     if phase.ndim != 2 or valid_mask.shape != phase.shape:
         raise ValueError("Unwrapped phase and valid mask must be matching 2D arrays.")
+    if coordinate_mask is None:
+        coordinate_mask = valid_mask
+    else:
+        coordinate_mask = np.asarray(coordinate_mask, dtype=bool)
+        if coordinate_mask.shape != phase.shape:
+            raise ValueError(
+                "Coordinate mask and phase must have matching 2D shapes."
+            )
+    valid_mask = valid_mask & coordinate_mask
 
     size_y, size_x = phase.shape
     zernike_valid_mask = valid_mask & np.isfinite(phase.filled(np.nan))
@@ -152,22 +162,25 @@ def analyze_aberration(
         raise ValueError(
             f"Not enough valid ROI pixels for J1-J{len(zernike_modes)} Zernike fitting."
         )
-    pupil_center_x = float(np.mean(valid_x))
-    pupil_center_y = float(np.mean(valid_y))
+    coordinate_y, coordinate_x = np.nonzero(coordinate_mask)
+    if coordinate_x.size == 0:
+        raise ValueError("The coordinate ROI contains no valid pixels.")
+    pupil_center_x = float(np.mean(coordinate_x))
+    pupil_center_y = float(np.mean(coordinate_y))
     pupil_radius = float(np.max(np.hypot(
-        valid_x - pupil_center_x,
-        valid_y - pupil_center_y,
+        coordinate_x - pupil_center_x,
+        coordinate_y - pupil_center_y,
     )))
     if pupil_radius <= 0:
         raise ValueError("The ROI pupil radius must be greater than zero.")
 
     zernike_y_grid, zernike_x_grid = np.indices((size_y, size_x))
     if pupil_vertices is None:
-        zernike_center_x = float(np.mean(valid_x))
-        zernike_center_y = float(np.mean(valid_y))
+        zernike_center_x = pupil_center_x
+        zernike_center_y = pupil_center_y
         zernike_radius = float(np.max(np.hypot(
-            valid_x - zernike_center_x,
-            valid_y - zernike_center_y,
+            coordinate_x - zernike_center_x,
+            coordinate_y - zernike_center_y,
         )))
         if zernike_radius <= 0:
             raise ValueError("The ROI pupil radius must be greater than zero.")
@@ -340,7 +353,11 @@ def analyze_aberration(
     )
     aberration_values_nm = wavefront_aberration_nm.compressed()
     aberration_rms_nm = float(np.sqrt(np.mean(aberration_values_nm ** 2)))
-    aberration_pv_nm = float(np.max(aberration_values_nm) - np.min(aberration_values_nm))
+    pv_lower_nm, pv_upper_nm = np.percentile(
+        aberration_values_nm,
+        [0.1, 99.9],
+    )
+    aberration_pv_nm = float(pv_upper_nm - pv_lower_nm)
 
     return AberrationResult(
         fit_mask=fit_mask,

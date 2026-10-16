@@ -267,7 +267,7 @@ class CameraContractTests(unittest.TestCase):
                 ("Wrapped phase", "wrapped"),
                 (
                     "Primary defocus removed; higher modes retained: "
-                    "RMS 12.35 nm, PV 67.89 nm",
+                    "RMS 12.35 nm, PV (0.1-99.9%) 67.89 nm",
                     "wavefront_aberration_nm",
                 ),
                 (
@@ -301,7 +301,51 @@ class CameraContractTests(unittest.TestCase):
         self.assertEqual(phase["name"], "Analysis [sample]: Phase 0")
         self.assertFalse(phase["is_rgb"])
         self.assertEqual(phase["colormap"], "gray")
-        self.assertEqual(phase["contrast_limits"], (1.0, 4.0))
+        expected_phase_limits = np.percentile(
+            np.asarray([[1.0, 2.0], [3.0, 4.0]]),
+            [0.1, 99.9],
+        )
+        np.testing.assert_allclose(
+            phase["contrast_limits"],
+            expected_phase_limits,
+        )
+
+    def test_analysis_presentation_clips_outlier_to_percentile_limits(self):
+        values = np.arange(1000, dtype=np.float64).reshape(20, 50)
+        values[0, 0] = 1e9
+
+        presentation = build_analysis_layer_presentation(
+            "unwrapped",
+            values,
+            "sample",
+            "Unwrapped",
+        )
+
+        np.testing.assert_allclose(
+            presentation["contrast_limits"],
+            np.percentile(values, [0.1, 99.9]),
+        )
+
+    def test_saved_scalar_png_uses_percentile_colour_limits(self):
+        values = np.arange(1000, dtype=np.float64).reshape(20, 50)
+        values[0, 0] = 1e9
+        calls = []
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with patch.object(
+                phase_analysis_new.plt,
+                "imsave",
+                side_effect=lambda path, image, **kwargs: calls.append(kwargs),
+            ):
+                phase_analysis_new.save_result_images(
+                    Path(temporary_directory),
+                    {"unwrapped": values},
+                )
+
+        expected_limits = np.percentile(values, [0.1, 99.9])
+        self.assertEqual(len(calls), 1)
+        self.assertAlmostEqual(calls[0]["vmin"], expected_limits[0])
+        self.assertAlmostEqual(calls[0]["vmax"], expected_limits[1])
 
         wrapped = build_analysis_layer_presentation(
             "wrapped", np.asarray([[-np.pi, np.pi]]), None, "Wrapped"

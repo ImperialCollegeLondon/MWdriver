@@ -14,9 +14,11 @@ from mwdriver.domain.phase_psi import (
     ALGORITHMS as PSI_ALGORITHMS,
     DEFAULT_ALGORITHM as DEFAULT_PSI_ALGORITHM,
     get_algorithm_id_from_metadata,
+    build_psi_valid_mask,
     phase_components,
     reconstruct_phase,
 )
+from mwdriver.domain.display_range import percentile_display_limits
 from mwdriver.analysis.phase_unwrap import unwrap_phase_from_center
 from mwdriver.analysis.phase_aberration import ZERNIKE_MODES, analyze_aberration
 from mwdriver.analysis.phase_analysis_plots import figure_to_rgb, render_aberration_plots
@@ -78,10 +80,10 @@ def save_result_images(result_dir, result_images):
             if masked.count() == 0:
                 continue
 
-            vmin = float(np.nanmin(masked))
-            vmax = float(np.nanmax(masked))
-            if not np.isfinite(vmin) or not np.isfinite(vmax):
+            limits = percentile_display_limits(masked.compressed())
+            if limits is None:
                 continue
+            vmin, vmax = limits
             if np.isclose(vmin, vmax):
                 vmin -= 1.0
                 vmax += 1.0
@@ -211,22 +213,14 @@ def analyze_capture(
     _, sizey, sizex = data.shape
 
     if roi_mask_path is not None:
-        valid_mask = np.asarray(np.load(roi_mask_path), dtype=bool)
-        if valid_mask.shape != (sizey, sizex):
+        roi_mask = np.asarray(np.load(roi_mask_path), dtype=bool)
+        if roi_mask.shape != (sizey, sizex):
             raise ValueError(
-                f"ROI mask shape {valid_mask.shape} does not match "
+                f"ROI mask shape {roi_mask.shape} does not match "
                 f"frame shape {(sizey, sizex)}."
             )
     else:
-        valid_mask = np.ones((sizey, sizex), dtype=bool)
-    mask = ~valid_mask
-
-    if np.all(mask):
-        raise ValueError("The capture ROI mask contains no valid pixels.")
-
-    roi_valid_y, roi_valid_x = np.nonzero(~mask)
-    roi_centroid_y = float(np.mean(roi_valid_y))
-    roi_centroid_x = float(np.mean(roi_valid_x))
+        roi_mask = np.ones((sizey, sizex), dtype=bool)
 
     print("Phase capture folder:")
     print(session_dir)
@@ -234,16 +228,40 @@ def analyze_capture(
     print(raw_stack_path)
     print("Data shape:", data.shape)
     print("Current ROI mask:", roi_mask_path if roi_mask_path is not None else "full frame")
-    print(
-        "ROI centroid: "
-        f"x={roi_centroid_x:.2f}, y={roi_centroid_y:.2f}"
-    )
 
 
     # ---------------------------------------------------------------------
     # Six-frame wrapped-phase recovery selected by capture metadata.
     # ---------------------------------------------------------------------
     phase_numerator, phase_denominator = phase_components(data, algorithm_id)
+    psi_magnitude = np.hypot(phase_numerator, phase_denominator)
+    finite_magnitude = psi_magnitude[np.isfinite(psi_magnitude)]
+    if finite_magnitude.size == 0:
+        raise ValueError("The image contains no finite PSI signal values.")
+    psi_magnitude_threshold = float(np.mean(finite_magnitude))
+    valid_mask = build_psi_valid_mask(
+        phase_numerator,
+        phase_denominator,
+        roi_mask,
+    )
+    mask = ~valid_mask
+    if not np.any(valid_mask):
+        raise ValueError(
+            "The current ROI contains no pixels above mean PSI signal magnitude."
+        )
+
+    roi_valid_y, roi_valid_x = np.nonzero(valid_mask)
+    roi_centroid_y = float(np.mean(roi_valid_y))
+    roi_centroid_x = float(np.mean(roi_valid_x))
+    print(
+        "Analysis pixels above mean PSI magnitude: "
+        f"{int(np.sum(valid_mask))}; threshold="
+        f"{psi_magnitude_threshold:.6g}"
+    )
+    print(
+        "Analysis-region centroid: "
+        f"x={roi_centroid_x:.2f}, y={roi_centroid_y:.2f}"
+    )
     phase = reconstruct_phase(data, algorithm_id)
     phase = np.ma.masked_array(phase, mask=mask)
 
@@ -270,7 +288,7 @@ def analyze_capture(
 
     save_intermediate_png(
         session_dir / "phase_intermediate_total.png",
-        np.ma.masked_array(np.sqrt(phase_denominator ** 2 + phase_numerator ** 2), mask=mask),
+        np.ma.masked_array(psi_magnitude, mask=~roi_mask),
         "phase magnitude",
         "grey",
     )
@@ -308,6 +326,7 @@ def analyze_capture(
         valid_mask,
         WAVELENGTH_NM,
         pupil_vertices=pupil_vertices,
+        coordinate_mask=roi_mask,
     )
     zernike_fit_mask = aberration_result.fit_mask
     zernike_coefficients_before_correction = (
@@ -374,7 +393,7 @@ def analyze_capture(
 
     print(
         f"Lens wavefront aberration in ROI: RMS = {aberration_rms_nm:.2f} nm, "
-        f"PV = {aberration_pv_nm:.2f} nm"
+        f"PV (0.1-99.9%) = {aberration_pv_nm:.2f} nm"
     )
 
     valid_output_mask = ~mask
@@ -473,7 +492,7 @@ def analyze_capture(
                 "title": (
                     "Primary defocus removed; higher-order aberrations retained\n"
                     f"RMS = {aberration_rms_nm:.2f} nm, "
-                    f"PV = {aberration_pv_nm:.2f} nm"
+                    f"PV (0.1-99.9%) = {aberration_pv_nm:.2f} nm"
                 ),
                 "cmap": "RdBu_r",
                 "colorbar": "Residual OPD (nm)",
