@@ -812,12 +812,7 @@ class PhaseCaptureController:
             self.status_label.setText("Status: Save worker already running")
             return False
 
-        # ========================================================
-        # Create an ROI snapshot for this capture session
-        # ========================================================
-        # Copy the current ROI before starting the background save worker.
-        # This prevents later ROI edits from changing the ROI associated
-        # with an already-captured six-frame dataset.
+        # Snapshot the current layer's mask for the automatic phase check.
         if self.roi_mask is not None:
             roi_mask_snapshot = np.array(
                 self.roi_mask,
@@ -826,23 +821,6 @@ class PhaseCaptureController:
             )
         else:
             roi_mask_snapshot = None
-
-        if self.roi_params is not None:
-            roi_params_snapshot = copy.deepcopy(self.roi_params)
-        else:
-            roi_params_snapshot = None
-
-        if roi_mask_snapshot is None:
-            print(
-                "Phase capture save note: no active ROI. "
-                "The six phase frames will still be saved, but no roi_mask.npy "
-                "will be included in this session folder."
-            )
-        else:
-            print(
-                "Phase capture ROI snapshot ready. "
-                "It will be saved with this session."
-            )
 
         session_prefix = "phase_capture"
         if self.recalibration_active and self.recalibration_stage == "coarse_capture":
@@ -854,7 +832,6 @@ class PhaseCaptureController:
             phase_times=phase_times,
             frame_timestamps=phase_frame_timestamps,
             roi_mask=roi_mask_snapshot,
-            roi_params=roi_params_snapshot,
             save_dir=SAVE_DIR,
             session_prefix=session_prefix,
             trigger_positions_ms=self.last_capture_trigger_positions_ms,

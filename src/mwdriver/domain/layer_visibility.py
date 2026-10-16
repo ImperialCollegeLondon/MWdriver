@@ -24,7 +24,7 @@ def build_layer_visibility_plan(
     show_time_series = mode == "time_series"
     return LayerVisibilityPlan(
         camera_visible=mode in {"preview", "roi"},
-        roi_visible=mode != "analysis",
+        roi_visible=True,
         analysis_layers_visible=tuple(
             show_analysis and layer is selected_layer
             for layer in analysis_layers

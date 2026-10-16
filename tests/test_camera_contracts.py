@@ -25,7 +25,6 @@ from mwdriver.capture.phase_capture_process import PhaseCheckResult, run_phase_c
 from mwdriver.capture.phase_capture_storage import (
     PhaseSaveResult,
     allocate_capture_session_dir,
-    save_roi_snapshots,
 )
 from mwdriver.domain.phase_psi import SIX_BUCKET_60_DEG
 from mwdriver.domain.recalibration import (
@@ -152,9 +151,22 @@ class CameraContractTests(unittest.TestCase):
         roi_layer = SimpleNamespace(visible=True)
         analysis_layers = [SimpleNamespace(visible=True), SimpleNamespace(visible=True)]
         time_series_layers = [SimpleNamespace(visible=True), SimpleNamespace(visible=True)]
+
+        class FakeLayerList(list):
+            def move(self, source_index, destination_index):
+                layer = self.pop(source_index)
+                self.insert(destination_index, layer)
+
+        layer_list = FakeLayerList([
+            camera_layer,
+            roi_layer,
+            *analysis_layers,
+            *time_series_layers,
+        ])
         viewer = SimpleNamespace(
             layer=camera_layer,
             roi_layer=roi_layer,
+            viewer=SimpleNamespace(layers=layer_list),
             phase_analysis_layer_records=[
                 {"layer": layer} for layer in analysis_layers
             ],
@@ -168,7 +180,8 @@ class CameraContractTests(unittest.TestCase):
         )
 
         self.assertFalse(camera_layer.visible)
-        self.assertFalse(roi_layer.visible)
+        self.assertTrue(roi_layer.visible)
+        self.assertIs(layer_list[-1], roi_layer)
         self.assertEqual(
             [layer.visible for layer in analysis_layers],
             [False, True],
@@ -422,10 +435,7 @@ class CameraContractTests(unittest.TestCase):
 
         calls = []
         callback_names = (
-            "start_rectangle_roi",
-            "start_circle_roi",
-            "mask_outside_area",
-            "mask_inside_area",
+            "start_ellipse_roi",
             "save_roi",
             "reload_roi",
             "clear_roi",
@@ -444,11 +454,7 @@ class CameraContractTests(unittest.TestCase):
         self.assertEqual(
             [item.label if item else None for item in menu.items],
             [
-                "Rect ROI",
-                "Circle ROI",
-                None,
-                "Mask Outside Area",
-                "Mask Inside Area",
+                "Ellipse ROI",
                 None,
                 "Save ROI",
                 "Reload ROI",
@@ -456,10 +462,7 @@ class CameraContractTests(unittest.TestCase):
             ],
         )
         self.assertEqual(set(actions), {
-            "rect_roi_action",
-            "circle_roi_action",
-            "mask_outside_action",
-            "mask_inside_action",
+            "ellipse_roi_action",
             "save_roi_action",
             "reload_roi_action",
             "clear_roi_action",
@@ -519,6 +522,8 @@ class CameraContractTests(unittest.TestCase):
             stack_path,
             export_path=Path("results.npz").resolve(),
             show_viewer=False,
+            roi_mask_path=None,
+            pupil_vertices=None,
         )
 
     def test_analysis_cli_options_allow_latest_session_mode(self):
@@ -544,6 +549,8 @@ class CameraContractTests(unittest.TestCase):
             Path("latest-stack.npy"),
             export_path=None,
             show_viewer=False,
+            roi_mask_path=None,
+            pupil_vertices=None,
         )
 
     def test_analysis_cli_latest_mode_selects_newest_capture(self):
@@ -572,6 +579,8 @@ class CameraContractTests(unittest.TestCase):
             latest_stack,
             export_path=None,
             show_viewer=False,
+            roi_mask_path=None,
+            pupil_vertices=None,
         )
 
     def test_capture_directory_allocator_skips_existing_suffixes(self):
@@ -961,7 +970,6 @@ class CameraContractTests(unittest.TestCase):
                     save_dir=str(save_root),
                     session_prefix="phase_calibration",
                     roi_mask=np.ones((4, 5), dtype=bool),
-                    roi_params={"shape": "rectangle", "valid_pixels": 20},
                     psi_algorithm_id=SIX_BUCKET_60_DEG,
                 )
                 worker.run_automatic_phase_check = complete_phase_check
@@ -991,11 +999,8 @@ class CameraContractTests(unittest.TestCase):
                 self.assertTrue(
                     (session_dir / f"phase_0_{timestamp}.png").is_file()
                 )
-                self.assertTrue((session_dir / "roi_mask.npy").is_file())
-                saved_roi_params = json.loads(
-                    (session_dir / "roi_params.json").read_text(encoding="utf-8")
-                )
-                self.assertEqual(saved_roi_params["valid_pixels"], 20)
+                self.assertFalse((session_dir / "roi_mask.npy").exists())
+                self.assertFalse((session_dir / "roi_params.json").exists())
                 metadata = json.loads(
                     (
                         session_dir
@@ -1006,11 +1011,7 @@ class CameraContractTests(unittest.TestCase):
                 )
                 self.assertEqual(metadata["phase_count"], 6)
                 self.assertIsNone(metadata["analysis_notebook_path"])
-                self.assertTrue(metadata["roi"]["roi_available"])
-                self.assertEqual(
-                    Path(metadata["roi"]["roi_mask_path"]).name,
-                    "roi_mask.npy",
-                )
+                self.assertNotIn("roi", metadata)
                 self.assertEqual(
                     metadata["phase_capture_model"]["algorithm_id"],
                     SIX_BUCKET_60_DEG,
@@ -1124,33 +1125,9 @@ class CameraContractTests(unittest.TestCase):
         self.assertFalse(results[0].save_success)
         self.assertIn("disk full", results[0].error)
 
-    def test_optional_roi_mask_write_failure_is_reported_without_blocking_params(self):
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            with patch(
-                "mwdriver.capture.phase_capture_storage.np.save",
-                side_effect=OSError("mask device unavailable"),
-            ):
-                result = save_roi_snapshots(
-                    temporary_directory,
-                    np.ones((3, 4), dtype=bool),
-                    {"roi_type": "rectangle"},
-                )
-
-            self.assertIsNone(result["roi_mask_path"])
-            self.assertTrue(Path(result["roi_params_path"]).is_file())
-            self.assertEqual(len(result["warnings"]), 1)
-            self.assertIn("mask device unavailable", result["warnings"][0])
-
-    def test_roi_mask_write_failure_marks_metadata_roi_unavailable(self):
+    def test_phase_capture_does_not_persist_roi_snapshot(self):
         timestamp = "20261014_120605"
         frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
-        original_save = np.save
-
-        def fail_mask_save(path, array, *args, **kwargs):
-            if Path(path).name == "roi_mask.npy":
-                raise OSError("mask device unavailable")
-            return original_save(path, array, *args, **kwargs)
-
         with tempfile.TemporaryDirectory() as temporary_directory:
             def complete_phase_check(session_dir):
                 check_path = Path(session_dir) / "measured_phase_check.json"
@@ -1178,20 +1155,18 @@ class CameraContractTests(unittest.TestCase):
             results = []
             worker.result_ready.connect(results.append)
 
-            with (
-                patch.object(camera.time, "strftime", return_value=timestamp),
-                patch("mwdriver.capture.phase_capture_storage.np.save", side_effect=fail_mask_save),
-            ):
+            with patch.object(camera.time, "strftime", return_value=timestamp):
                 worker.run()
 
             result = results[0]
             metadata = json.loads(Path(result.metadata_path).read_text(encoding="utf-8"))
             self.assertTrue(result.save_success)
             self.assertTrue(result.phase_check_success)
-            self.assertFalse(metadata["roi"]["roi_available"])
-            self.assertIsNone(metadata["roi"]["roi_mask_path"])
+            self.assertNotIn("roi", metadata)
+            self.assertFalse((Path(result.session_dir) / "roi_mask.npy").exists())
+            self.assertFalse((Path(result.session_dir) / "roi_params.json").exists())
 
-    def test_mismatched_roi_mask_shape_is_skipped_without_failing_capture(self):
+    def test_mismatched_current_roi_mask_fails_capture_validation(self):
         timestamp = "20261014_120606"
         frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
 
@@ -1216,7 +1191,6 @@ class CameraContractTests(unittest.TestCase):
                 frames=frames,
                 save_dir=temporary_directory,
                 roi_mask=np.ones((3, 5), dtype=bool),
-                roi_params={"shape": "rectangle"},
                 session_prefix="phase_capture",
             )
             worker.run_automatic_phase_check = complete_phase_check
@@ -1227,29 +1201,9 @@ class CameraContractTests(unittest.TestCase):
                 worker.run()
 
             result = results[0]
-            metadata = json.loads(Path(result.metadata_path).read_text(encoding="utf-8"))
-            self.assertTrue(result.save_success)
-            self.assertTrue(result.phase_check_success)
-            self.assertFalse(metadata["roi"]["roi_available"])
-            self.assertIsNone(metadata["roi"]["roi_mask_path"])
-            self.assertIsNotNone(metadata["roi"]["roi_params_path"])
-
-    def test_optional_roi_params_write_failure_is_reported_without_blocking_mask(self):
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            with patch(
-                "mwdriver.capture.phase_capture_storage.json.dump",
-                side_effect=OSError("parameter device unavailable"),
-            ):
-                result = save_roi_snapshots(
-                    temporary_directory,
-                    np.ones((3, 4), dtype=bool),
-                    {"roi_type": "rectangle"},
-                )
-
-            self.assertTrue(Path(result["roi_mask_path"]).is_file())
-            self.assertIsNone(result["roi_params_path"])
-            self.assertEqual(len(result["warnings"]), 1)
-            self.assertIn("parameter device unavailable", result["warnings"][0])
+            self.assertFalse(result.save_success)
+            self.assertIsNone(result.metadata_path)
+            self.assertIn("ROI mask shape", result.error)
 
     def test_png_write_failure_returns_failed_result_but_keeps_raw_stack(self):
         frames = [np.full((4, 5), index + 1, dtype=np.uint16) for index in range(6)]
@@ -1375,6 +1329,62 @@ class CameraContractTests(unittest.TestCase):
         self.assertEqual(Path(result.output_json_path).name, "measured_phase_check.json")
         self.assertEqual(result.stdout, "ok")
 
+    def test_phase_check_passes_current_mask_via_temporary_file_and_cleans_it(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            checker_path = Path(temporary_directory, "checker.py")
+            checker_path.touch()
+            session_dir = Path(temporary_directory, "session")
+            session_dir.mkdir()
+            roi_mask = np.asarray([[True, False], [True, True]])
+            temporary_mask_paths = []
+
+            def runner(command, **_kwargs):
+                self.assertEqual(command[1], str(checker_path))
+                self.assertEqual(command[2], str(session_dir.resolve()))
+                self.assertEqual(command[3], "--roi-mask")
+                mask_path = Path(command[4])
+                temporary_mask_paths.append(mask_path)
+                np.testing.assert_array_equal(np.load(mask_path), roi_mask)
+                (session_dir / "measured_vs_expected_phase_annotated.png").touch()
+                (session_dir / "measured_phase_check.json").touch()
+                self.assertTrue(mask_path.is_file())
+                return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+            result = run_phase_check(
+                str(checker_path),
+                str(session_dir),
+                temporary_directory,
+                12,
+                python_executable="fake-python.exe",
+                runner=runner,
+                roi_mask=roi_mask,
+            )
+
+        self.assertTrue(result.success)
+        self.assertEqual(len(temporary_mask_paths), 1)
+        self.assertFalse(temporary_mask_paths[0].exists())
+
+    def test_phase_checker_correlates_only_current_roi_pixels(self):
+        phase_steps = np.asarray([0.0, 0.7, 1.4, 2.1, 2.8, 3.5])
+        fields = np.ones((6, 5, 5), dtype=np.complex128)
+        fields[:, 2, 2] = np.exp(1j * phase_steps)
+        fields[:, 2, 3] = np.exp(1j * phase_steps)
+        fields[:, 0, 0] = np.exp(1j * np.asarray([0, -1, -2, -3, -4, -5]))
+        roi_mask = np.zeros((5, 5), dtype=bool)
+        roi_mask[2, 2:4] = True
+
+        with patch.object(
+            phase_check,
+            "extract_complex_fields",
+            return_value=(fields, {}),
+        ):
+            measured, _ = phase_check.estimate_phase_curve(
+                np.zeros((6, 5, 5)),
+                roi_mask=roi_mask,
+            )
+
+        np.testing.assert_allclose(measured, np.rad2deg(phase_steps), atol=1e-10)
+
     def test_phase_check_process_reports_nonzero_or_missing_outputs(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             checker_path = Path(temporary_directory, "checker.py")
@@ -1459,7 +1469,7 @@ class CameraContractTests(unittest.TestCase):
                 ),
                 patch.object(phase_check, "create_annotated_plot") as create_plot,
             ):
-                phase_check.main()
+                phase_check.main([])
 
             report_path = session_dir / "measured_phase_check.json"
             report = json.loads(report_path.read_text(encoding="utf-8"))

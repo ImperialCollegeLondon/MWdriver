@@ -14,6 +14,7 @@ Key changes
 """
 
 from pathlib import Path
+import argparse
 import json
 import sys
 import time
@@ -54,9 +55,9 @@ PHASE_ERROR_TOLERANCE_DEG = 5.0
 # Input discovery
 # ============================================================
 
-def find_capture_folder():
-    if len(sys.argv) >= 2:
-        folder = Path(sys.argv[1])
+def find_capture_folder(session_dir=None):
+    if session_dir is not None:
+        folder = Path(session_dir)
 
         if not folder.is_absolute():
             folder = (BASE_DIR / folder).resolve()
@@ -393,19 +394,30 @@ def extract_complex_fields(stack):
     return complex_fields, info
 
 
-def estimate_phase_curve(stack):
+def estimate_phase_curve(stack, roi_mask=None):
     complex_fields, fft_info = extract_complex_fields(stack)
     _, height, width = complex_fields.shape
 
-    cy = height // 2
-    cx = width // 2
-    roi_half_size = min(200, height // 4, width // 4)
-    y1 = cy - roi_half_size
-    y2 = cy + roi_half_size
-    x1 = cx - roi_half_size
-    x2 = cx + roi_half_size
+    if roi_mask is not None:
+        roi_mask = np.asarray(roi_mask, dtype=bool)
+        if roi_mask.shape != (height, width):
+            raise ValueError(
+                f"ROI mask shape {roi_mask.shape} does not match "
+                f"frame shape {(height, width)}."
+            )
+        if not np.any(roi_mask):
+            raise ValueError("Current ROI contains no valid pixels.")
+        reference = complex_fields[0][roi_mask]
+    else:
+        cy = height // 2
+        cx = width // 2
+        roi_half_size = min(200, height // 4, width // 4)
+        y1 = cy - roi_half_size
+        y2 = cy + roi_half_size
+        x1 = cx - roi_half_size
+        x2 = cx + roi_half_size
+        reference = complex_fields[0, y1:y2, x1:x2]
 
-    reference = complex_fields[0, y1:y2, x1:x2]
     reference_energy = float(np.sum(np.abs(reference) ** 2))
     if reference_energy <= 0:
         raise RuntimeError("Reference sideband field has zero energy.")
@@ -414,7 +426,7 @@ def estimate_phase_curve(stack):
     correlation_magnitudes = []
 
     for field in complex_fields:
-        current = field[y1:y2, x1:x2]
+        current = field[roi_mask] if roi_mask is not None else field[y1:y2, x1:x2]
         numerator = np.sum(current * np.conj(reference))
         current_energy = float(np.sum(np.abs(current) ** 2))
         denominator = np.sqrt(current_energy * reference_energy)
@@ -561,8 +573,12 @@ def create_annotated_plot(
 # Main
 # ============================================================
 
-def main():
-    session_dir = find_capture_folder()
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("session_dir", nargs="?")
+    parser.add_argument("--roi-mask", type=Path)
+    arguments = parser.parse_args(argv)
+    session_dir = find_capture_folder(arguments.session_dir)
     raw_stack_path = find_raw_stack(session_dir)
     metadata_files = sorted(session_dir.glob("*_metadata.json"))
     algorithm_id = DEFAULT_PSI_ALGORITHM
@@ -590,9 +606,12 @@ def main():
     print("\nData shape:", data.shape)
     print("Data dtype:", data.dtype)
 
-    measured_phase_deg, diagnostics = (
-        estimate_phase_curve(data)
+    roi_mask = (
+        np.asarray(np.load(arguments.roi_mask), dtype=bool)
+        if arguments.roi_mask is not None
+        else None
     )
+    measured_phase_deg, diagnostics = estimate_phase_curve(data, roi_mask)
 
     phase_error_deg = (
         measured_phase_deg

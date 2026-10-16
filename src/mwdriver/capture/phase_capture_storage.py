@@ -79,44 +79,6 @@ def validate_phase_frame_stack(frames, psi_algorithm_id=DEFAULT_ALGORITHM):
     return stack
 
 
-def save_roi_snapshots(session_dir, roi_mask, roi_params, expected_mask_shape=None):
-    mask_path = None
-    params_path = None
-    warnings = []
-
-    if roi_mask is not None:
-        try:
-            mask = np.asarray(roi_mask, dtype=bool)
-            if (
-                expected_mask_shape is not None
-                and mask.shape != tuple(expected_mask_shape)
-            ):
-                raise ValueError(
-                    f"ROI mask shape {mask.shape} does not match frame shape "
-                    f"{tuple(expected_mask_shape)}."
-                )
-            mask_path = os.path.join(session_dir, "roi_mask.npy")
-            np.save(mask_path, mask)
-        except Exception as error:
-            warnings.append(f"Save ROI mask warning: {error}")
-            mask_path = None
-
-    if roi_params is not None:
-        try:
-            params_path = os.path.join(session_dir, "roi_params.json")
-            with open(params_path, "w", encoding="utf-8") as file:
-                json.dump(roi_params, file, indent=4, ensure_ascii=False)
-        except Exception as error:
-            warnings.append(f"Save ROI parameters warning: {error}")
-            params_path = None
-
-    return {
-        "roi_mask_path": mask_path,
-        "roi_params_path": params_path,
-        "warnings": warnings,
-    }
-
-
 def save_raw_phase_stack(session_dir, session_prefix, timestamp, frames):
     stack = np.asarray(frames)
     path = os.path.join(
@@ -151,9 +113,6 @@ def save_phase_capture_metadata(
     phase_times,
     frame_timestamps,
     png_paths,
-    roi_available,
-    roi_mask_path,
-    roi_params_path,
     psi_algorithm_id=DEFAULT_ALGORITHM,
 ):
     algorithm = get_algorithm(psi_algorithm_id)
@@ -170,14 +129,6 @@ def save_phase_capture_metadata(
         "png_paths": list(png_paths),
         "phase_times": phase_times,
         "frame_timestamps": frame_timestamps,
-        "roi": {
-            "roi_available": roi_available,
-            "roi_mask_path": roi_mask_path,
-            "roi_params_path": roi_params_path,
-            "mask_meaning": (
-                "True means retained valid area; False means masked/rejected area"
-            ),
-        },
         "phase_capture_model": {
             "algorithm_id": psi_algorithm_id,
             "algorithm_name": algorithm["label"],

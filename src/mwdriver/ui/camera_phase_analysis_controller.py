@@ -1,8 +1,10 @@
 """Phase-analysis session selection, subprocess launch and result loading."""
 
 import os
+import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -137,15 +139,34 @@ class CameraPhaseAnalysisController:
             if self.view_phase_analysis_button is not None:
                 self.view_phase_analysis_button.setEnabled(False)
 
+            analysis_command = [
+                sys.executable,
+                PHASE_ANALYSIS_SCRIPT,
+                session_dir,
+                "--no-viewer",
+                "--export",
+                self.phase_analysis_output_path,
+            ]
+            current_inside_mask, roi_type, roi_info = self.get_current_inside_mask()
+            self.phase_analysis_roi_mask_path = None
+            if current_inside_mask is not None:
+                mask_file = tempfile.NamedTemporaryFile(
+                    prefix="mwdriver_phase_roi_",
+                    suffix=".npy",
+                    delete=False,
+                )
+                self.phase_analysis_roi_mask_path = mask_file.name
+                mask_file.close()
+                np.save(self.phase_analysis_roi_mask_path, current_inside_mask)
+                analysis_command.extend([
+                    "--roi-mask",
+                    self.phase_analysis_roi_mask_path,
+                    "--pupil-vertices",
+                    json.dumps(roi_info["raw_coordinates"]["vertices"]),
+                ])
+
             self.phase_analysis_process = subprocess.Popen(
-                [
-                    sys.executable,
-                    PHASE_ANALYSIS_SCRIPT,
-                    session_dir,
-                    "--no-viewer",
-                    "--export",
-                    self.phase_analysis_output_path,
-                ],
+                analysis_command,
                 cwd=SCRIPT_DIR,
             )
             self.status_label.setText(
@@ -155,6 +176,10 @@ class CameraPhaseAnalysisController:
             print(f"Started phase analysis for {description}:", session_dir)
             QTimer.singleShot(200, self.check_phase_analysis_process)
         except Exception as error:
+            roi_mask_path = getattr(self, "phase_analysis_roi_mask_path", None)
+            if roi_mask_path and os.path.exists(roi_mask_path):
+                os.remove(roi_mask_path)
+            self.phase_analysis_roi_mask_path = None
             self.phase_analysis_process = None
             self.status_label.setText(
                 f"Status: Failed to start phase analysis: {error}"
@@ -171,6 +196,10 @@ class CameraPhaseAnalysisController:
             return
 
         self.phase_analysis_process = None
+        roi_mask_path = getattr(self, "phase_analysis_roi_mask_path", None)
+        if roi_mask_path and os.path.exists(roi_mask_path):
+            os.remove(roi_mask_path)
+        self.phase_analysis_roi_mask_path = None
         if return_code != 0:
             self.status_label.setText(
                 f"Status: Phase analysis failed with code {return_code}"

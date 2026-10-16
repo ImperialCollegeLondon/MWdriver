@@ -18,7 +18,6 @@ from mwdriver.capture.phase_capture_storage import (
     save_phase_capture_metadata,
     save_phase_pngs,
     save_raw_phase_stack,
-    save_roi_snapshots,
     validate_phase_frame_stack,
 )
 from mwdriver.domain.phase_psi import DEFAULT_ALGORITHM
@@ -42,7 +41,6 @@ class PhaseSaveWorker(QObject):
         phase_times=None,
         frame_timestamps=None,
         roi_mask=None,
-        roi_params=None,
         save_dir=DEFAULT_SAVE_DIR,
         session_prefix="phase_capture",
         trigger_positions_ms=None,
@@ -59,7 +57,6 @@ class PhaseSaveWorker(QObject):
         self.trigger_positions_ms = trigger_positions_ms
         self.psi_algorithm_id = psi_algorithm_id
         self.roi_mask = roi_mask
-        self.roi_params = roi_params
         self.save_dir = save_dir
         self.session_prefix = str(session_prefix)
         self.phase_check_script = phase_check_script
@@ -83,6 +80,7 @@ class PhaseSaveWorker(QObject):
             session_dir,
             str(MODULE_DIR),
             self.phase_check_timeout_s,
+            roi_mask=self.roi_mask,
         )
         if result.stdout:
             print("Automatic phase-check stdout:")
@@ -190,29 +188,19 @@ class PhaseSaveWorker(QObject):
             )
             print("Session save directory:", session_dir)
 
-            roi_result = save_roi_snapshots(
-                session_dir,
-                self.roi_mask,
-                self.roi_params,
-                expected_mask_shape=frames.shape[1:],
-            )
-            roi_mask_path = roi_result["roi_mask_path"]
-            roi_params_path = roi_result["roi_params_path"]
-            for warning in roi_result["warnings"]:
-                print(warning)
             if self.roi_mask is None:
-                print("No ROI mask was active for this phase capture.")
-            elif roi_mask_path is not None:
+                print("No active ellipse ROI; phase check will use its default region.")
+            else:
                 roi_mask = np.asarray(self.roi_mask, dtype=bool)
-                print("Saved ROI mask:", roi_mask_path)
-                print("ROI mask shape:", roi_mask.shape)
-                print("ROI valid pixels:", int(np.sum(roi_mask)))
-                self.status_ready.emit(f"Saved ROI mask: {roi_mask_path}")
-            if self.roi_params is None:
-                print("No ROI parameters were active for this phase capture.")
-            elif roi_params_path is not None:
-                print("Saved ROI parameters:", roi_params_path)
-                self.status_ready.emit(f"Saved ROI parameters: {roi_params_path}")
+                if roi_mask.shape != frames.shape[1:]:
+                    raise ValueError(
+                        f"ROI mask shape {roi_mask.shape} does not match "
+                        f"frame shape {frames.shape[1:]}"
+                    )
+                print(
+                    "Current ellipse ROI mask supplied to automatic phase check; "
+                    "not saved with capture."
+                )
 
             raw_stack_path, stack = save_raw_phase_stack(
                 session_dir,
@@ -246,9 +234,6 @@ class PhaseSaveWorker(QObject):
                 phase_times=self.phase_times,
                 frame_timestamps=self.frame_timestamps,
                 png_paths=png_paths,
-                roi_available=roi_mask_path is not None,
-                roi_mask_path=roi_mask_path,
-                roi_params_path=roi_params_path,
                 psi_algorithm_id=self.psi_algorithm_id,
             )
             print("Saved metadata:", metadata_path)

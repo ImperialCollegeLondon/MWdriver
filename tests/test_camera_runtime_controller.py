@@ -37,7 +37,7 @@ class CameraRuntimeControllerTests(unittest.TestCase):
         self.assertIs(viewer.latest_display_frame, display_frame)
         self.assertEqual(assignments, [(raw_frame, frame_meta)])
 
-    def test_live_preview_updates_masked_layer(self):
+    def test_live_preview_updates_layer_without_applying_roi_mask(self):
         raw_frame = object()
         display_frame = object()
         viewer = SimpleNamespace(
@@ -45,7 +45,9 @@ class CameraRuntimeControllerTests(unittest.TestCase):
             latest_display_frame=None,
             phase_capture_active=False,
             current_camera_mode="live",
-            apply_display_mask=lambda frame: ("masked", frame),
+            apply_display_mask=lambda _frame: self.fail(
+                "live preview must not apply the ROI mask"
+            ),
             layer=SimpleNamespace(data=None),
         )
 
@@ -53,7 +55,7 @@ class CameraRuntimeControllerTests(unittest.TestCase):
 
         self.assertIs(viewer.latest_raw_frame, raw_frame)
         self.assertIs(viewer.latest_display_frame, display_frame)
-        self.assertEqual(viewer.layer.data, ("masked", display_frame))
+        self.assertIs(viewer.layer.data, display_frame)
 
 
 if __name__ == "__main__":

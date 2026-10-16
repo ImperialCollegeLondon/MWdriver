@@ -29,7 +29,7 @@ class LayerVisibilityTests(unittest.TestCase):
                     (False, False),
                 )
 
-    def test_analysis_mode_shows_only_selected_analysis_layer(self):
+    def test_analysis_mode_shows_selected_analysis_layer_with_roi_overlay(self):
         plan = build_layer_visibility_plan(
             "analysis",
             self.analysis_layers,
@@ -38,7 +38,7 @@ class LayerVisibilityTests(unittest.TestCase):
         )
 
         self.assertFalse(plan.camera_visible)
-        self.assertFalse(plan.roi_visible)
+        self.assertTrue(plan.roi_visible)
         self.assertEqual(plan.analysis_layers_visible, (False, True))
         self.assertEqual(plan.time_series_layers_visible, (False, False))
 

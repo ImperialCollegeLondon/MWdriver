@@ -61,7 +61,7 @@ class CameraInitializationController:
         self.roi_layer = self.viewer.add_shapes(
             name="ROI",
             ndim=2,
-            shape_type="rectangle",
+            shape_type="ellipse",
             edge_width=3,
             edge_color="red",
             face_color=[1, 0, 0, 0.15]

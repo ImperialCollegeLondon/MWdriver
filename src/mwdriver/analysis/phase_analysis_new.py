@@ -126,6 +126,15 @@ def build_argument_parser():
         metavar="OUTPUT_NPZ",
         help="write analysis arrays to an NPZ file",
     )
+    parser.add_argument(
+        "--roi-mask",
+        type=Path,
+        help="temporary current retained-area mask; omitted means use the full frame",
+    )
+    parser.add_argument(
+        "--pupil-vertices",
+        help="JSON array of current ellipse vertices in raw y/x pixel coordinates",
+    )
     return parser
 
 
@@ -175,6 +184,8 @@ def analyze_capture(
     *,
     export_path=None,
     show_viewer=False,
+    roi_mask_path=None,
+    pupil_vertices=None,
 ):
     session_dir = Path(session_dir).resolve()
     raw_stack_path = Path(raw_stack_path).resolve()
@@ -199,37 +210,16 @@ def analyze_capture(
 
     _, sizey, sizex = data.shape
 
-    roi_mask_path = session_dir / "roi_mask.npy"
-    pupil_vertices = None
-    roi_params_path = session_dir / "roi_params.json"
-    if roi_params_path.exists():
-        with roi_params_path.open("r", encoding="utf-8") as roi_params_file:
-            roi_params = json.load(roi_params_file)
-        if roi_params.get("roi_type") == "circle_or_ellipse":
-            raw_coordinates = roi_params.get("raw_coordinates", {})
-            pupil_vertices = raw_coordinates.get("vertices")
-            if pupil_vertices is None and all(
-                key in raw_coordinates
-                for key in ("x_min", "x_max", "y_min", "y_max")
-            ):
-                pupil_vertices = [
-                    [raw_coordinates["y_min"], raw_coordinates["x_min"]],
-                    [raw_coordinates["y_min"], raw_coordinates["x_max"]],
-                    [raw_coordinates["y_max"], raw_coordinates["x_max"]],
-                    [raw_coordinates["y_max"], raw_coordinates["x_min"]],
-                ]
-
-    if roi_mask_path.exists():
+    if roi_mask_path is not None:
         valid_mask = np.asarray(np.load(roi_mask_path), dtype=bool)
         if valid_mask.shape != (sizey, sizex):
             raise ValueError(
                 f"ROI mask shape {valid_mask.shape} does not match "
                 f"frame shape {(sizey, sizex)}."
             )
-        mask = ~valid_mask
     else:
         valid_mask = np.ones((sizey, sizex), dtype=bool)
-        mask = ~valid_mask
+    mask = ~valid_mask
 
     if np.all(mask):
         raise ValueError("The capture ROI mask contains no valid pixels.")
@@ -243,7 +233,7 @@ def analyze_capture(
     print("Raw stack:")
     print(raw_stack_path)
     print("Data shape:", data.shape)
-    print("ROI mask:", roi_mask_path if roi_mask_path.exists() else "not present")
+    print("Current ROI mask:", roi_mask_path if roi_mask_path is not None else "full frame")
     print(
         "ROI centroid: "
         f"x={roi_centroid_x:.2f}, y={roi_centroid_y:.2f}"
@@ -542,6 +532,12 @@ def main(argv=None):
         raw_stack_path,
         export_path=get_export_path(arguments.export),
         show_viewer=not arguments.no_viewer,
+        roi_mask_path=arguments.roi_mask,
+        pupil_vertices=(
+            json.loads(arguments.pupil_vertices)
+            if arguments.pupil_vertices is not None
+            else None
+        ),
     )
 
 

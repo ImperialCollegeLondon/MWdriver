@@ -77,7 +77,11 @@ class CameraViewController:
         )
         self.layer.visible = plan.camera_visible
         if self.roi_layer is not None:
-            self.roi_layer.visible = plan.roi_visible
+            self.roi_layer.visible = True
+            roi_index = self.viewer.layers.index(self.roi_layer)
+            top_index = len(self.viewer.layers) - 1
+            if roi_index != top_index:
+                self.viewer.layers.move(roi_index, top_index)
         for record, visible in zip(
             self.phase_analysis_layer_records,
             plan.analysis_layers_visible,

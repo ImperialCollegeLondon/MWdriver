@@ -228,8 +228,6 @@ class CameraRuntimeController:
             # Do not let GUI redraw work delay closely spaced triggered frames.
             return
 
-        display_frame = self.apply_display_mask(display_frame)
-
         self.layer.data = display_frame
 
     def update_fps(self, fps):
