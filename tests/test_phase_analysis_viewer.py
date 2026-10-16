@@ -15,7 +15,7 @@ from mwdriver.analysis.phase_analysis_viewer import show_analysis_result_viewer
 
 
 class PhaseAnalysisViewerTests(unittest.TestCase):
-    def test_viewer_buttons_render_image_bar_and_fourier_results(self):
+    def test_viewer_buttons_render_image_and_bar_results(self):
         results = [
             {
                 "button": "Image",
@@ -31,17 +31,6 @@ class PhaseAnalysisViewerTests(unittest.TestCase):
                 "values": [0.2, -0.1],
                 "title": "Bar result",
                 "ylabel": "Waves",
-            },
-            {
-                "button": "Fourier",
-                "plot_type": "fourier",
-                "spectrum": np.ones((8, 8)),
-                "peak_x": 5,
-                "peak_y": 6,
-                "mask_radius": 2,
-                "dc_x": 4,
-                "dc_y": 4,
-                "title": "Fourier result",
             },
         ]
         callbacks = []

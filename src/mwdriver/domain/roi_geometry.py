@@ -30,28 +30,55 @@ def build_inside_mask(roi_vertices, roi_type, image_height, image_width, display
             "y_max": raw_y_max,
         }
     elif roi_type == "ellipse":
-        center_y = (raw_y_min + raw_y_max) / 2.0
-        center_x = (raw_x_min + raw_x_max) / 2.0
-        radius_y = (raw_y_max - raw_y_min) / 2.0
-        radius_x = (raw_x_max - raw_x_min) / 2.0
-        if radius_x <= 0 or radius_y <= 0:
+        raw_vertices = roi_data[:, :2] * display_downsample
+        if len(raw_vertices) == 2:
+            center_y = (raw_vertices[0, 0] + raw_vertices[1, 0]) / 2.0
+            center_x = (raw_vertices[0, 1] + raw_vertices[1, 1]) / 2.0
+            axis_y = (raw_vertices[1, 0] - raw_vertices[0, 0]) / 2.0
+            axis_x = (raw_vertices[1, 1] - raw_vertices[0, 1]) / 2.0
+            raw_vertices = np.asarray([
+                [center_y - axis_y, center_x - axis_x],
+                [center_y - axis_y, center_x + axis_x],
+                [center_y + axis_y, center_x + axis_x],
+                [center_y + axis_y, center_x - axis_x],
+            ])
+        if raw_vertices.shape != (4, 2):
             return None, None, None
+
+        center_y, center_x = np.mean(raw_vertices, axis=0)
+        first_axis = (raw_vertices[1] - raw_vertices[0]) / 2.0
+        second_axis = (raw_vertices[2] - raw_vertices[1]) / 2.0
+        transform = np.column_stack((first_axis, second_axis))
+        if abs(np.linalg.det(transform)) <= np.finfo(float).eps:
+            return None, None, None
+        inverse_transform = np.linalg.inv(transform)
+
         yy, xx = np.ogrid[:image_height, :image_width]
-        inside_mask = (
-            ((xx - center_x) / radius_x) ** 2
-            + ((yy - center_y) / radius_y) ** 2
-        ) <= 1.0
+        delta_y = yy - center_y
+        delta_x = xx - center_x
+        first_coordinate = (
+            inverse_transform[0, 0] * delta_y
+            + inverse_transform[0, 1] * delta_x
+        )
+        second_coordinate = (
+            inverse_transform[1, 0] * delta_y
+            + inverse_transform[1, 1] * delta_x
+        )
+        inside_mask = first_coordinate ** 2 + second_coordinate ** 2 <= 1.0
         roi_info_type = "circle_or_ellipse"
         raw_coordinates = {
             "center_x": center_x,
             "center_y": center_y,
-            "radius_x": radius_x,
-            "radius_y": radius_y,
-            "average_radius": (radius_x + radius_y) / 2.0,
+            "radius_x": float(np.linalg.norm(first_axis)),
+            "radius_y": float(np.linalg.norm(second_axis)),
+            "average_radius": float(
+                (np.linalg.norm(first_axis) + np.linalg.norm(second_axis)) / 2.0
+            ),
             "x_min": raw_x_min,
             "x_max": raw_x_max,
             "y_min": raw_y_min,
             "y_max": raw_y_max,
+            "vertices": raw_vertices.tolist(),
         }
     else:
         return None, None, None

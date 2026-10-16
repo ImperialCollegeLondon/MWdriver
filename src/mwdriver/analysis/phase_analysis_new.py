@@ -18,7 +18,6 @@ from mwdriver.domain.phase_psi import (
     reconstruct_phase,
 )
 from mwdriver.analysis.phase_unwrap import unwrap_phase_from_center
-from mwdriver.analysis.phase_fourier import detect_fourier_carrier
 from mwdriver.analysis.phase_aberration import ZERNIKE_MODES, analyze_aberration
 from mwdriver.analysis.phase_analysis_plots import figure_to_rgb, render_aberration_plots
 from mwdriver.analysis.phase_analysis_viewer import show_analysis_result_viewer
@@ -201,6 +200,25 @@ def analyze_capture(
     _, sizey, sizex = data.shape
 
     roi_mask_path = session_dir / "roi_mask.npy"
+    pupil_vertices = None
+    roi_params_path = session_dir / "roi_params.json"
+    if roi_params_path.exists():
+        with roi_params_path.open("r", encoding="utf-8") as roi_params_file:
+            roi_params = json.load(roi_params_file)
+        if roi_params.get("roi_type") == "circle_or_ellipse":
+            raw_coordinates = roi_params.get("raw_coordinates", {})
+            pupil_vertices = raw_coordinates.get("vertices")
+            if pupil_vertices is None and all(
+                key in raw_coordinates
+                for key in ("x_min", "x_max", "y_min", "y_max")
+            ):
+                pupil_vertices = [
+                    [raw_coordinates["y_min"], raw_coordinates["x_min"]],
+                    [raw_coordinates["y_min"], raw_coordinates["x_max"]],
+                    [raw_coordinates["y_max"], raw_coordinates["x_max"]],
+                    [raw_coordinates["y_max"], raw_coordinates["x_min"]],
+                ]
+
     if roi_mask_path.exists():
         valid_mask = np.asarray(np.load(roi_mask_path), dtype=bool)
         if valid_mask.shape != (sizey, sizex):
@@ -219,12 +237,6 @@ def analyze_capture(
     roi_valid_y, roi_valid_x = np.nonzero(~mask)
     roi_centroid_y = float(np.mean(roi_valid_y))
     roi_centroid_x = float(np.mean(roi_valid_x))
-    nearest_roi_index = np.argmin(
-        (roi_valid_y - roi_centroid_y) ** 2
-        + (roi_valid_x - roi_centroid_x) ** 2
-    )
-    unwrap_center_y = int(roi_valid_y[nearest_roi_index])
-    unwrap_center_x = int(roi_valid_x[nearest_roi_index])
 
     print("Phase capture folder:")
     print(session_dir)
@@ -233,29 +245,8 @@ def analyze_capture(
     print("Data shape:", data.shape)
     print("ROI mask:", roi_mask_path if roi_mask_path.exists() else "not present")
     print(
-        "ROI unwrap centre: "
-        f"x={unwrap_center_x}, y={unwrap_center_y} "
-        f"(centroid x={roi_centroid_x:.2f}, y={roi_centroid_y:.2f})"
-    )
-
-
-    # ---------------------------------------------------------------------
-    # Detect the first-order Fourier carrier peak in frame 0
-    # ---------------------------------------------------------------------
-    fourier_carrier = detect_fourier_carrier(data[0])
-    fourier_spectrum = fourier_carrier.spectrum
-    fourier_cy = fourier_carrier.center_y
-    fourier_cx = fourier_carrier.center_x
-    fourier_peak_y = fourier_carrier.peak_y
-    fourier_peak_x = fourier_carrier.peak_x
-    fourier_peak_distance = fourier_carrier.peak_distance
-    fourier_mask_radius = fourier_carrier.mask_radius
-
-    print(
-        "Detected first-order Fourier peak: "
-        f"x={fourier_peak_x}, y={fourier_peak_y}, "
-        f"distance={fourier_peak_distance:.2f} px, "
-        f"mask radius={fourier_mask_radius} px"
+        "ROI centroid: "
+        f"x={roi_centroid_x:.2f}, y={roi_centroid_y:.2f}"
     )
 
 
@@ -304,12 +295,7 @@ def analyze_capture(
     )
 
 
-    vertical_unwrapped, phaseUW = unwrap_phase_from_center(
-        phase,
-        mask,
-        unwrap_center_y,
-        unwrap_center_x,
-    )
+    vertical_unwrapped, phaseUW = unwrap_phase_from_center(phase, mask)
 
     save_intermediate_png(
         session_dir / "phase_intermediate_05_vertical_unwrapped.png",
@@ -331,12 +317,13 @@ def analyze_capture(
         phaseUW,
         valid_mask,
         WAVELENGTH_NM,
+        pupil_vertices=pupil_vertices,
     )
     zernike_fit_mask = aberration_result.fit_mask
     zernike_coefficients_before_correction = (
         aberration_result.zernike_coefficients_before_waves
     )
-    zernike_coefficients_after_tilt = (
+    zernike_coefficients_after_correction = (
         aberration_result.zernike_coefficients_after_waves
     )
     aberration_component_waves = aberration_result.aberration_component_waves
@@ -349,7 +336,7 @@ def analyze_capture(
     zernike_center_y = aberration_result.zernike_center_y
     zernike_radius = aberration_result.zernike_radius
     print(
-        "Zernike coefficients before piston/tilt removal (waves):"
+        "Zernike coefficients before real-space correction (waves):"
     )
     for mode, coefficient in zip(
         ZERNIKE_MODES,
@@ -373,7 +360,7 @@ def analyze_capture(
     aberration_plots = render_aberration_plots(
         ZERNIKE_MODES,
         zernike_coefficients_before_correction,
-        zernike_coefficients_after_tilt,
+        zernike_coefficients_after_correction,
         aberration_component_waves,
     )
     zernike_bar_labels = aberration_plots.zernike_bar_labels
@@ -384,10 +371,15 @@ def analyze_capture(
 
 
     print(
-        f"z20 = {aberration_result.defocus_coefficient:.4f} rad, "
+        f"real-space r-squared defocus coefficient = "
+        f"{aberration_result.defocus_coefficient:.4f} rad, "
         f"z22 = {aberration_result.astigmatism_coefficient_x:.4f} rad, "
         f"z2m2 = {aberration_result.astigmatism_coefficient_y:.4f} rad, "
         f"z40 = {aberration_result.spherical_coefficient:.4f} rad"
+    )
+    print(
+        "J22 secondary spherical coefficient: "
+        f"{aberration_result.secondary_spherical_coefficient_waves:+.6f} waves"
     )
 
     print(
@@ -414,21 +406,14 @@ def analyze_capture(
             ).astype(np.float32),
             "wavefront_aberration_rms_nm": np.float32(aberration_rms_nm),
             "wavefront_aberration_pv_nm": np.float32(aberration_pv_nm),
-            "fourier_spectrum": fourier_spectrum.astype(np.float32),
-            "fourier_peak_xy": np.asarray(
-                [fourier_peak_x, fourier_peak_y],
-                dtype=np.int32,
-            ),
-            "fourier_dc_xy": np.asarray(
-                [fourier_cx, fourier_cy],
-                dtype=np.int32,
-            ),
-            "fourier_mask_radius": np.int32(fourier_mask_radius),
             "zernike_coefficients_before_correction_waves": (
                 zernike_coefficients_before_correction.astype(np.float32)
             ),
             "aberration_component_waves": aberration_component_waves.astype(
                 np.float32
+            ),
+            "secondary_spherical_coefficient_waves": np.float32(
+                aberration_result.secondary_spherical_coefficient_waves
             ),
             "zernike_before_plot_rgb": zernike_before_plot_rgb,
             "zernike_after_plot_rgb": zernike_after_plot_rgb,
@@ -493,15 +478,15 @@ def analyze_capture(
                 "colorbar": "Phase (rad)",
             },
             {
-                "button": "Defocus removed",
+                "button": "Primary defocus removed",
                 "image": wavefront_aberration_nm,
                 "title": (
-                    "Defocus-removed wavefront aberration\n"
+                    "Primary defocus removed; higher-order aberrations retained\n"
                     f"RMS = {aberration_rms_nm:.2f} nm, "
                     f"PV = {aberration_pv_nm:.2f} nm"
                 ),
                 "cmap": "RdBu_r",
-                "colorbar": "Defocus-removed OPD (nm)",
+                "colorbar": "Residual OPD (nm)",
             },
             {
                 "button": "Residual",
@@ -511,19 +496,22 @@ def analyze_capture(
                 "colorbar": "Surface error (nm)",
             },
             {
-                "button": "Zernike J1-J15 before",
+                "button": "Zernike J1-J28 before",
                 "plot_type": "bar",
                 "labels": zernike_bar_labels,
                 "values": zernike_coefficients_before_correction,
-                "title": "Zernike Coefficients Before Piston and Tilt Removal",
+                "title": "Zernike Coefficients Before Real-Space Correction",
                 "ylabel": "Coefficient / waves",
             },
             {
-                "button": "Zernike J1-J15 after",
+                "button": "Zernike J1-J28 after",
                 "plot_type": "bar",
                 "labels": zernike_after_bar_labels,
-                "values": zernike_coefficients_after_tilt,
-                "title": "Zernike Coefficients After Piston and Tilt Removal",
+                "values": zernike_coefficients_after_correction,
+                "title": (
+                    "Complete Zernike Fit of Residual After Piston, "
+                    "Tilt and Defocus Removal"
+                ),
                 "ylabel": "Coefficient / waves",
             },
         ])
@@ -539,7 +527,7 @@ def analyze_capture(
         wavefront_aberration_nm=wavefront_aberration_nm,
         residual_surface_nm=residual_surface_nm,
         zernike_coefficients_before_waves=zernike_coefficients_before_correction,
-        zernike_coefficients_after_waves=zernike_coefficients_after_tilt,
+        zernike_coefficients_after_waves=zernike_coefficients_after_correction,
         aberration_rms_nm=aberration_rms_nm,
         aberration_pv_nm=aberration_pv_nm,
         export_path=export_path,

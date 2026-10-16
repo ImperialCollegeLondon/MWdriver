@@ -17,31 +17,7 @@ def show_analysis_result_viewer(results):
         image_axis.clear()
         colorbar_axis.clear()
         plot_type = result.get("plot_type", "image")
-        if plot_type == "fourier":
-            image_axis.imshow(np.log1p(result["spectrum"]), cmap="gray")
-            peak_circle = plt.Circle(
-                (result["peak_x"], result["peak_y"]),
-                result["mask_radius"],
-                fill=False,
-                linewidth=2,
-            )
-            image_axis.add_patch(peak_circle)
-            image_axis.scatter(
-                result["peak_x"],
-                result["peak_y"],
-                s=45,
-                label="First-order peak",
-            )
-            image_axis.scatter(
-                result["dc_x"],
-                result["dc_y"],
-                s=45,
-                label="DC",
-            )
-            image_axis.legend()
-            image_axis.set_xlabel("Frequency x")
-            image_axis.set_ylabel("Frequency y")
-        elif plot_type == "bar":
+        if plot_type == "bar":
             image_axis.bar(result["labels"], result["values"])
             image_axis.axhline(0, linewidth=1)
             image_axis.set_xlabel("Noll index")

@@ -69,6 +69,31 @@ class RoiStorageTests(unittest.TestCase):
             [[2, 1], [2, 4], [5, 4], [5, 1]],
         )
 
+    def test_tilted_ellipse_reload_preserves_rotated_vertices(self):
+        vertices = [
+            [20.0, 14.0],
+            [30.0, 24.0],
+            [26.0, 28.0],
+            [16.0, 18.0],
+        ]
+        params = {
+            "roi_type": "circle_or_ellipse",
+            "raw_coordinates": {"vertices": vertices},
+        }
+        mask = np.ones((40, 40), dtype=bool)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            save_roi_files(temporary_directory, params, mask)
+            _, _, shape_data, shape_type = load_roi_files(
+                temporary_directory,
+                image_height=40,
+                image_width=40,
+                display_downsample=2,
+            )
+
+        self.assertEqual(shape_type, "ellipse")
+        np.testing.assert_allclose(shape_data, np.asarray(vertices) / 2)
+
     def test_reload_rejects_mismatched_mask_shape_and_unknown_roi_type(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             save_roi_files(

@@ -4,12 +4,15 @@ import queue
 import time
 
 import serial
+from serial.tools import list_ports
 from qtpy.QtCore import QObject, Signal
 
 from mwdriver.domain.recalibration import DEFAULT_RECALIBRATION_CONFIG
 
 
 PHASE_CAPTURE_COUNT = DEFAULT_RECALIBRATION_CONFIG.frame_count
+PICO_USB_VID = 0x2E8A
+PICO_READY_LINE = "PICO_READY"
 
 
 class PicoSerialWorker(QObject):
@@ -22,7 +25,7 @@ class PicoSerialWorker(QObject):
     status_ready = Signal(str)
     message_ready = Signal(str)
 
-    def __init__(self, port="COM3", baudrate=115200, reboot_pico=True):
+    def __init__(self, port=None, baudrate=115200, reboot_pico=True):
         super().__init__()
 
         self.port = port
@@ -31,6 +34,60 @@ class PicoSerialWorker(QObject):
         self.running = False
         self.ser = None
         self.command_queue = queue.Queue()
+        self._pico_booted_during_discovery = False
+
+    def _open_pico_serial(self):
+        if self.port is not None:
+            return serial.Serial(self.port, self.baudrate, timeout=0.2)
+
+        candidates = [
+            port for port in list_ports.comports()
+            if port.vid == PICO_USB_VID
+        ]
+        if not candidates:
+            raise RuntimeError("No Raspberry Pi Pico USB serial device found")
+
+        for candidate in candidates:
+            serial_port = None
+            try:
+                self.status_ready.emit(
+                    f"Pico: Checking {candidate.device}..."
+                )
+                serial_port = serial.Serial(
+                    candidate.device,
+                    self.baudrate,
+                    timeout=0.2,
+                )
+                if not self.reboot_pico:
+                    self.port = candidate.device
+                    return serial_port
+
+                serial_port.write(b"\x03")
+                time.sleep(0.3)
+                serial_port.write(b"\x04")
+                deadline = time.monotonic() + 5.0
+                while self.running and time.monotonic() < deadline:
+                    line = serial_port.readline().decode(
+                        errors="ignore"
+                    ).strip()
+                    if not line:
+                        continue
+                    self.message_ready.emit(f"Pico startup: {line}")
+                    if line == PICO_READY_LINE:
+                        self.port = candidate.device
+                        self._pico_booted_during_discovery = True
+                        return serial_port
+            except Exception as error:
+                self.message_ready.emit(
+                    f"Pico probe failed on {candidate.device}: {error}"
+                )
+
+            if serial_port is not None:
+                serial_port.close()
+
+        raise RuntimeError(
+            "No Pico firmware found on Raspberry Pi USB serial devices"
+        )
 
     def request_start_phase_from_gui(self):
         try:
@@ -95,12 +152,13 @@ class PicoSerialWorker(QObject):
         self.running = True
 
         try:
-            self.status_ready.emit(f"Pico: Opening {self.port}...")
-            with serial.Serial(self.port, self.baudrate, timeout=0.2) as serial_port:
+            port_label = self.port if self.port is not None else "automatically"
+            self.status_ready.emit(f"Pico: Opening {port_label}...")
+            with self._open_pico_serial() as serial_port:
                 self.ser = serial_port
                 self.status_ready.emit(f"Pico: Connected on {self.port}")
 
-                if self.reboot_pico:
+                if self.reboot_pico and not self._pico_booted_during_discovery:
                     self.message_ready.emit("Pico: soft reboot...")
                     try:
                         serial_port.write(b"\x03")

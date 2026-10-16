@@ -50,7 +50,7 @@ def render_aberration_plots(
         )
     zernike_axis.axhline(0, linewidth=1)
     zernike_axis.set_title(
-        "Zernike Coefficients Before Piston and Tilt Removal"
+        "Zernike Coefficients Before Real-Space Piston/Tilt/Defocus Removal"
     )
     zernike_axis.set_xlabel("Noll index and aberration")
     zernike_axis.set_ylabel("Coefficient / waves")
@@ -65,6 +65,7 @@ def render_aberration_plots(
         "Spherical\nJ11",
         "Secondary astig.\nJ12/J13",
         "Quadrafoil\nJ14/J15",
+        "Secondary spherical\nJ22",
     ]
     composition_figure, composition_axis = plt.subplots(figsize=(12, 7))
     composition_bars = composition_axis.bar(
@@ -108,7 +109,7 @@ def render_aberration_plots(
         )
     zernike_after_axis.axhline(0, linewidth=1)
     zernike_after_axis.set_title(
-        "Zernike Coefficients After Piston and Tilt Removal"
+        "Zernike Coefficients of Residual After Piston, Tilt and Defocus Removal"
     )
     zernike_after_axis.set_xlabel("Noll index and aberration")
     zernike_after_axis.set_ylabel("Coefficient / waves")

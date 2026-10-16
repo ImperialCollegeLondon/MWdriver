@@ -19,12 +19,13 @@ def choose_analysis_layer_operation(
 
 
 def build_phase_analysis_result_options(phase_analysis_results):
-    aberration_label = "Defocus removed (nm OPD)"
+    aberration_label = "Primary defocus removed; higher modes retained (nm OPD)"
     aberration_rms = phase_analysis_results.get("wavefront_aberration_rms_nm")
     aberration_pv = phase_analysis_results.get("wavefront_aberration_pv_nm")
     if aberration_rms is not None and aberration_pv is not None:
         aberration_label = (
-            f"Defocus removed: RMS {float(aberration_rms):.2f} nm, "
+            f"Primary defocus removed; higher modes retained: "
+            f"RMS {float(aberration_rms):.2f} nm, "
             f"PV {float(aberration_pv):.2f} nm"
         )
 
@@ -35,11 +36,11 @@ def build_phase_analysis_result_options(phase_analysis_results):
         (aberration_label, "wavefront_aberration_nm"),
         ("Residual surface (nm)", "residual_nm"),
         (
-            "Zernike J1-J15 before piston/tilt removal",
+            "Zernike J1-J28 before piston/tilt removal",
             "zernike_before_plot_rgb",
         ),
         (
-            "Zernike J1-J15 after piston/tilt removal",
+            "Zernike J1-J28 residual after piston/tilt/defocus removal",
             "zernike_after_plot_rgb",
         ),
         (

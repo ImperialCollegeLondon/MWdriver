@@ -4,5 +4,6 @@ imageio
 pyserial
 # Install thorlabs_tsi_sdk separately from the official Thorlabs SDK archive.
 napari
+scikit-image>=0.24
 qtpy
 PySide6

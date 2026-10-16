@@ -56,7 +56,7 @@ from mwdriver.domain.phase_psi import (
 # Pico / Phase Capture å‚æ•°
 # ============================================================
 
-PICO_PORT = "COM4"
+PICO_PORT = None
 PICO_BAUDRATE = 115200
 
 # Automatic phase-point checker.

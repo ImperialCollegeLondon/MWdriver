@@ -253,11 +253,12 @@ class CameraContractTests(unittest.TestCase):
             [
                 ("Wrapped phase", "wrapped"),
                 (
-                    "Defocus removed: RMS 12.35 nm, PV 67.89 nm",
+                    "Primary defocus removed; higher modes retained: "
+                    "RMS 12.35 nm, PV 67.89 nm",
                     "wavefront_aberration_nm",
                 ),
                 (
-                    "Zernike J1-J15 after piston/tilt removal",
+                    "Zernike J1-J28 residual after piston/tilt/defocus removal",
                     "zernike_after_plot_rgb",
                 ),
             ],
@@ -271,7 +272,10 @@ class CameraContractTests(unittest.TestCase):
 
         self.assertEqual(
             options,
-            [("Defocus removed (nm OPD)", "wavefront_aberration_nm")],
+            [(
+                "Primary defocus removed; higher modes retained (nm OPD)",
+                "wavefront_aberration_nm",
+            )],
         )
 
     def test_analysis_layer_presentation_selects_name_rgb_cmap_and_limits(self):
@@ -759,6 +763,41 @@ class CameraContractTests(unittest.TestCase):
             ],
         )
         self.assertTrue(serial_port.flushed)
+
+    def test_pico_worker_auto_discovers_pico_by_startup_marker(self):
+        class DiscoverySerial(FakeSerial):
+            def __init__(self):
+                super().__init__()
+                self.lines = iter([b"boot message\n", b"PICO_READY\n"])
+
+            def readline(self):
+                return next(self.lines, b"")
+
+            def close(self):
+                self.closed = True
+
+        candidate = SimpleNamespace(device="COM9", vid=0x2E8A)
+        serial_port = DiscoverySerial()
+        worker = camera.PicoSerialWorker(port=None)
+        worker.running = True
+
+        with (
+            patch(
+                "mwdriver.hardware.pico_serial_worker.list_ports.comports",
+                return_value=[candidate],
+            ),
+            patch(
+                "mwdriver.hardware.pico_serial_worker.serial.Serial",
+                return_value=serial_port,
+            ),
+            patch("mwdriver.hardware.pico_serial_worker.time.sleep"),
+        ):
+            discovered = worker._open_pico_serial()
+
+        self.assertIs(discovered, serial_port)
+        self.assertEqual(worker.port, "COM9")
+        self.assertTrue(worker._pico_booted_during_discovery)
+        self.assertEqual(serial_port.writes, [b"\x03", b"\x04"])
 
     def test_pico_worker_dispatches_capture_lifecycle_messages(self):
         worker = camera.PicoSerialWorker(port="COM4")

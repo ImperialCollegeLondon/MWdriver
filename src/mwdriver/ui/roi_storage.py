@@ -34,12 +34,18 @@ def load_roi_files(directory, image_height, image_width, display_downsample):
         )
 
     raw_coordinates = roi_params.get("raw_coordinates", {})
+    roi_type = roi_params.get("roi_type")
+    if roi_type == "circle_or_ellipse":
+        vertices = raw_coordinates.get("vertices")
+        if vertices is not None:
+            shape_data = np.asarray(vertices, dtype=float) / display_downsample
+            return roi_params, roi_mask, shape_data, "ellipse"
+
     x_min = float(raw_coordinates["x_min"]) / display_downsample
     x_max = float(raw_coordinates["x_max"]) / display_downsample
     y_min = float(raw_coordinates["y_min"]) / display_downsample
     y_max = float(raw_coordinates["y_max"]) / display_downsample
 
-    roi_type = roi_params.get("roi_type")
     if roi_type == "rectangle":
         shape_type = "rectangle"
     elif roi_type == "circle_or_ellipse":

@@ -17,7 +17,9 @@ class PhaseAnalysisPlotTests(unittest.TestCase):
     def test_render_aberration_plots_returns_labelled_rgb_images(self):
         coefficients_before = np.linspace(-0.2, 0.2, len(ZERNIKE_MODES))
         coefficients_after = coefficients_before * 0.4
-        component_waves = np.asarray([0.03, 0.02, 0.01, 0.04, 0.005, 0.008])
+        component_waves = np.asarray(
+            [0.03, 0.02, 0.01, 0.04, 0.005, 0.008, 0.006]
+        )
 
         result = render_aberration_plots(
             ZERNIKE_MODES,

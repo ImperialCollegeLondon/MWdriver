@@ -55,6 +55,28 @@ class RoiGeometryTests(unittest.TestCase):
         self.assertEqual(metadata["raw_coordinates"]["average_radius"], 2.5)
         self.assertEqual(metadata["image_size"], {"width": 10, "height": 7})
 
+    def test_tilted_ellipse_mask_uses_rotated_axes(self):
+        center = np.asarray([24.0, 24.0])
+        first_axis = np.asarray([5.0, 5.0])
+        second_axis = np.asarray([-2.0, 2.0])
+        corners = np.asarray([
+            center - first_axis - second_axis,
+            center + first_axis - second_axis,
+            center + first_axis + second_axis,
+            center - first_axis + second_axis,
+        ])
+
+        mask, _, _ = build_inside_mask(
+            corners,
+            roi_type="ellipse",
+            image_height=50,
+            image_width=50,
+            display_downsample=1,
+        )
+
+        self.assertTrue(mask[28, 28])
+        self.assertFalse(mask[26, 30])
+
     def test_invalid_roi_types_and_degenerate_bounds_return_no_mask(self):
         self.assertEqual(
             build_inside_mask([[1, 2], [1, 5]], "rectangle", 8, 10, 1),
