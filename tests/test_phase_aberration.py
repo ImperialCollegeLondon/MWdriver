@@ -34,9 +34,9 @@ class PhaseAberrationTests(unittest.TestCase):
         result = analyze_aberration(phase, valid, wavelength_nm=632.8)
 
         self.assertEqual(result.fit_mask.shape, phase.shape)
-        self.assertEqual(result.zernike_coefficients_before_waves.shape, (28,))
-        self.assertEqual(result.zernike_coefficients_after_waves.shape, (28,))
-        self.assertEqual(result.aberration_component_waves.shape, (7,))
+        self.assertEqual(result.zernike_coefficients_before_waves.shape, (11,))
+        self.assertEqual(result.zernike_coefficients_after_waves.shape, (11,))
+        self.assertEqual(result.aberration_component_waves.shape, (4,))
         self.assertEqual(result.tilt_removed_phase.shape, phase.shape)
         self.assertEqual(result.residual_surface_nm.shape, phase.shape)
         self.assertEqual(result.wavefront_aberration_nm.shape, phase.shape)
@@ -44,7 +44,8 @@ class PhaseAberrationTests(unittest.TestCase):
         self.assertTrue(np.isfinite(result.aberration_rms_nm))
         self.assertTrue(np.isfinite(result.aberration_pv_nm))
         self.assertGreaterEqual(result.aberration_pv_nm, 0.0)
-        self.assertEqual(len(ZERNIKE_MODES), 28)
+        self.assertEqual(len(ZERNIKE_MODES), 11)
+        self.assertEqual(ZERNIKE_MODES[-1], (11, 4, 0, "Primary Spherical"))
         self.assertAlmostEqual(result.pupil_center_x, 31.5)
         self.assertAlmostEqual(result.pupil_center_y, 31.5)
 
@@ -61,7 +62,7 @@ class PhaseAberrationTests(unittest.TestCase):
         )
         self.assertAlmostEqual(result.aberration_pv_nm, expected_pv)
 
-    def test_analysis_recovers_secondary_spherical_j22_content(self):
+    def test_analysis_recovers_primary_spherical_j11_content(self):
         yy, xx = np.indices((64, 64))
         center = 31.5
         radius = 25.0
@@ -82,7 +83,7 @@ class PhaseAberrationTests(unittest.TestCase):
             * np.pi
             * target_coefficient_waves
             * zernike_polynomial(
-                6,
+                4,
                 0,
                 normalized_radius,
                 np.arctan2(normalized_y, normalized_x),
@@ -93,11 +94,11 @@ class PhaseAberrationTests(unittest.TestCase):
         result = analyze_aberration(phase, valid, wavelength_nm=632.8)
 
         self.assertAlmostEqual(
-            result.secondary_spherical_coefficient_waves,
+            result.zernike_coefficients_before_waves[10],
             target_coefficient_waves,
             places=10,
         )
-        self.assertAlmostEqual(result.aberration_component_waves[6], 0.37)
+        self.assertAlmostEqual(result.aberration_component_waves[3], 0.37)
 
     def test_cartesian_zernike_polynomials_match_standard_modes(self):
         x_values = np.linspace(-1.0, 1.0, 31)
@@ -144,7 +145,7 @@ class PhaseAberrationTests(unittest.TestCase):
         local_x = local_coordinates[0].reshape(xx.shape)
         local_y = local_coordinates[1].reshape(yy.shape)
         valid = local_x ** 2 + local_y ** 2 <= 1.0
-        mode_n, mode_m = 4, 2
+        mode_n, mode_m = 4, 0
         target_coefficient_waves = 0.31
         phase = np.ma.masked_array(
             2.0
@@ -442,7 +443,7 @@ class PhaseAberrationTests(unittest.TestCase):
             result.wavefront_aberration_nm.compressed() * 2.0 * np.pi / 632.8
         )
         np.testing.assert_allclose(actual_phase, expected_phase, atol=1e-9)
-        self.assertEqual(result.zernike_coefficients_after_waves.shape, (28,))
+        self.assertEqual(result.zernike_coefficients_after_waves.shape, (11,))
 
     def test_analysis_rejects_nonmatching_phase_and_mask_shapes(self):
         with self.assertRaisesRegex(ValueError, "matching 2D"):

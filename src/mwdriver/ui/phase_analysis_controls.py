@@ -36,12 +36,13 @@ def build_phase_analysis_result_options(phase_analysis_results):
         ("Tilt removed", "tilt_removed"),
         (aberration_label, "wavefront_aberration_nm"),
         ("Residual surface (nm)", "residual_nm"),
+        ("3D wavefront surfaces", "wavefront_surfaces_plot_rgb"),
         (
-            "Zernike J1-J28 before piston/tilt removal",
+            "Zernike J1-J11 before piston/tilt removal",
             "zernike_before_plot_rgb",
         ),
         (
-            "Zernike J1-J28 residual after piston/tilt/defocus removal",
+            "Zernike J1-J11 residual after piston/tilt/defocus removal",
             "zernike_after_plot_rgb",
         ),
         (

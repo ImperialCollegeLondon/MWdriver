@@ -173,20 +173,17 @@ class CameraControlsController:
 
         self.status_label = QLabel("Status: Stopped")
         self.fps_label = QLabel("FPS: --")
-        self.roi_label = QLabel("ROI: Not selected")
         self.pico_label = QLabel("Pico: Not connected")
         self.phase_label = QLabel("Phase Capture: Idle")
 
         self.status_label.setWordWrap(True)
         self.fps_label.setWordWrap(True)
-        self.roi_label.setWordWrap(True)
         self.pico_label.setWordWrap(True)
         self.phase_label.setWordWrap(True)
 
         status_layout.addWidget(status_title_label)
         status_layout.addWidget(self.status_label)
         status_layout.addWidget(self.fps_label)
-        status_layout.addWidget(self.roi_label)
         status_layout.addWidget(self.pico_label)
         status_layout.addWidget(self.phase_label)
 

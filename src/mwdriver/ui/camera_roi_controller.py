@@ -100,7 +100,6 @@ class CameraRoiController:
         self.roi_layer.mode = "add_ellipse"
         self.viewer.layers.selection.active = self.roi_layer
 
-        self.roi_label.setText("ROI: Draw one ellipse")
         self.status_label.setText("Status: Ellipse ROI mode")
 
     def prepare_roi_drawing(self):
@@ -131,7 +130,6 @@ class CameraRoiController:
                 and str(self.roi_layer.shape_type[0]) != "ellipse"
             ):
                 self.roi_layer.data = []
-                self.roi_label.setText("ROI: Only an ellipse is supported")
                 self.status_label.setText("Status: Non-ellipse ROI cleared")
                 return
             self.refresh_roi_mask()
@@ -147,7 +145,6 @@ class CameraRoiController:
             self.roi_layer.mode = "select"
             self.waiting_for_roi_finish = False
             self.refresh_roi_mask()
-            self.roi_label.setText("ROI: Only an ellipse is supported")
             self.status_label.setText("Status: Non-ellipse ROI cleared")
             return
 
@@ -163,7 +160,6 @@ class CameraRoiController:
         self.waiting_for_roi_finish = False
 
         self.refresh_roi_mask()
-        self.roi_label.setText("ROI: Ellipse selected; outside area masked")
         self.status_label.setText("Status: Ellipse ROI selected / editable")
 
         print("ROI drawing finished. Switched to select mode.")
@@ -230,7 +226,6 @@ class CameraRoiController:
         self.display_mask_enabled = False
         self.current_display_mask = None
 
-        self.roi_label.setText("ROI: Not selected")
         self.status_label.setText("Status: ROI and mask cleared")
 
         print("ROI and mask cleared.")
@@ -259,7 +254,6 @@ class CameraRoiController:
             self.refresh_roi_mask()
             self.last_roi_count = 1
 
-            self.roi_label.setText("ROI: Ellipse reloaded; outside area masked")
             self.status_label.setText("Status: Saved ROI reloaded")
             print(
                 "Saved ROI reloaded:",
@@ -269,7 +263,6 @@ class CameraRoiController:
 
         except Exception as error:
             self.status_label.setText(f"Status: Reload ROI failed: {error}")
-            self.roi_label.setText("ROI: Reload failed")
             print("Reload ROI failed:", error)
 
     def save_roi(self):
@@ -277,7 +270,6 @@ class CameraRoiController:
 
         if inside_mask is None:
             self.status_label.setText("Status: No ROI to save")
-            self.roi_label.setText("ROI: Not selected")
             print("No ROI to save.")
             return
 
@@ -289,7 +281,6 @@ class CameraRoiController:
             self.roi_mask,
         )
 
-        self.roi_label.setText("ROI: Ellipse saved")
         self.status_label.setText("Status: ROI and mask saved")
 
         print("ROI ellipse saved.")

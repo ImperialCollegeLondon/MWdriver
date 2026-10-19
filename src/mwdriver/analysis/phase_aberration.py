@@ -18,23 +18,6 @@ ZERNIKE_MODES = [
     (9, 3, -3, "Vertical Trefoil"),
     (10, 3, 3, "Oblique Trefoil"),
     (11, 4, 0, "Primary Spherical"),
-    (12, 4, -2, "Secondary Astigmatism"),
-    (13, 4, 2, "Secondary Astigmatism"),
-    (14, 4, -4, "Quadrafoil"),
-    (15, 4, 4, "Quadrafoil"),
-    (16, 5, -1, "Secondary Vertical Coma"),
-    (17, 5, 1, "Secondary Horizontal Coma"),
-    (18, 5, -3, "Secondary Vertical Trefoil"),
-    (19, 5, 3, "Secondary Oblique Trefoil"),
-    (20, 5, -5, "Pentafoil"),
-    (21, 5, 5, "Pentafoil"),
-    (22, 6, 0, "Secondary Spherical"),
-    (23, 6, -2, "Tertiary Astigmatism"),
-    (24, 6, 2, "Tertiary Astigmatism"),
-    (25, 6, -4, "Secondary Quadrafoil"),
-    (26, 6, 4, "Secondary Quadrafoil"),
-    (27, 6, -6, "Hexafoil"),
-    (28, 6, 6, "Hexafoil"),
 ]
 
 
@@ -44,7 +27,6 @@ class AberrationResult:
     zernike_coefficients_before_waves: np.ndarray
     zernike_coefficients_after_waves: np.ndarray
     aberration_component_waves: np.ndarray
-    secondary_spherical_coefficient_waves: float
     tilt_removed_phase: np.ma.MaskedArray
     residual_surface_nm: np.ma.MaskedArray
     wavefront_aberration_nm: np.ma.MaskedArray
@@ -321,9 +303,6 @@ def analyze_aberration(
         np.hypot(coefficients_after[6], coefficients_after[7]),
         np.hypot(coefficients_after[8], coefficients_after[9]),
         abs(coefficients_after[10]),
-        np.hypot(coefficients_after[11], coefficients_after[12]),
-        np.hypot(coefficients_after[13], coefficients_after[14]),
-        abs(coefficients_after[21]),
     ], dtype=np.float64)
 
     z2m2 = zernike_polynomial_cartesian(
@@ -364,7 +343,6 @@ def analyze_aberration(
         zernike_coefficients_before_waves=coefficients_before,
         zernike_coefficients_after_waves=coefficients_after,
         aberration_component_waves=component_waves,
-        secondary_spherical_coefficient_waves=float(coefficients_after[21]),
         tilt_removed_phase=tilt_removed,
         residual_surface_nm=residual_surface_nm,
         wavefront_aberration_nm=wavefront_aberration_nm,

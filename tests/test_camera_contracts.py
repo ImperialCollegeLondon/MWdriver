@@ -271,7 +271,7 @@ class CameraContractTests(unittest.TestCase):
                     "wavefront_aberration_nm",
                 ),
                 (
-                    "Zernike J1-J28 residual after piston/tilt/defocus removal",
+                    "Zernike J1-J11 residual after piston/tilt/defocus removal",
                     "zernike_after_plot_rgb",
                 ),
             ],

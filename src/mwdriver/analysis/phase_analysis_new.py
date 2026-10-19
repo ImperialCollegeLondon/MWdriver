@@ -21,7 +21,14 @@ from mwdriver.domain.phase_psi import (
 from mwdriver.domain.display_range import percentile_display_limits
 from mwdriver.analysis.phase_unwrap import unwrap_phase_from_center
 from mwdriver.analysis.phase_aberration import ZERNIKE_MODES, analyze_aberration
-from mwdriver.analysis.phase_analysis_plots import figure_to_rgb, render_aberration_plots
+from mwdriver.analysis.phase_analysis_plots import (
+    PLOT_DPI,
+    PLOT_FIGSIZE,
+    figure_to_rgb,
+    render_aberration_plots,
+    render_wavefront_surfaces,
+    style_plot_text,
+)
 from mwdriver.analysis.phase_analysis_viewer import show_analysis_result_viewer
 
 
@@ -47,7 +54,7 @@ class PhaseAnalysisResult:
 
 
 def save_intermediate_png(path, image, title, cmap, vmin=None, vmax=None):
-    figure, axis = plt.subplots(figsize=(10, 7))
+    figure, axis = plt.subplots(figsize=PLOT_FIGSIZE, dpi=PLOT_DPI)
     plotted_image = axis.imshow(
         image,
         cmap=cmap,
@@ -58,8 +65,10 @@ def save_intermediate_png(path, image, title, cmap, vmin=None, vmax=None):
     axis.set_xlabel("x pixel")
     axis.set_ylabel("y pixel")
     figure.colorbar(plotted_image, ax=axis)
+    style_plot_text(figure)
     figure.tight_layout()
-    figure.savefig(path, dpi=150)
+    with plt.rc_context({"savefig.bbox": None}):
+        figure.savefig(path, dpi=PLOT_DPI)
     plt.close(figure)
 
 
@@ -265,14 +274,6 @@ def analyze_capture(
     phase = reconstruct_phase(data, algorithm_id)
     phase = np.ma.masked_array(phase, mask=mask)
 
-    for index, frame in enumerate(data):
-        save_intermediate_png(
-            session_dir / f"phase_intermediate_01_input_{index}.png",
-            np.ma.masked_array(frame, mask=mask),
-            f"Input frame {index}: {expected_phase_deg[index]:g} degrees",
-            "gray",
-        )
-
     save_intermediate_png(
         session_dir / "phase_intermediate_02_numerator.png",
         np.ma.masked_array(phase_numerator, mask=mask),
@@ -377,6 +378,11 @@ def analyze_capture(
     zernike_before_plot_rgb = aberration_plots.zernike_before_rgb
     zernike_after_plot_rgb = aberration_plots.zernike_after_rgb
     aberration_composition_plot_rgb = aberration_plots.composition_rgb
+    wavefront_surfaces_plot_rgb = render_wavefront_surfaces(
+        phaseT * WAVELENGTH_NM / (2.0 * np.pi),
+        wavefront_aberration_nm,
+        2.0 * residual_surface_nm,
+    )
 
 
     print(
@@ -387,24 +393,13 @@ def analyze_capture(
         f"z40 = {aberration_result.spherical_coefficient:.4f} rad"
     )
     print(
-        "J22 secondary spherical coefficient: "
-        f"{aberration_result.secondary_spherical_coefficient_waves:+.6f} waves"
-    )
-
-    print(
         f"Lens wavefront aberration in ROI: RMS = {aberration_rms_nm:.2f} nm, "
         f"PV (0.1-99.9%) = {aberration_pv_nm:.2f} nm"
     )
 
-    valid_output_mask = ~mask
     if export_path is not None:
         output_arrays = {
-            f"phase_{index}": np.where(valid_output_mask, frame, np.nan).astype(
-                np.float32
-            )
-            for index, frame in enumerate(data)
-        }
-        output_arrays.update({
+            "roi_mask": roi_mask.copy(),
             "wrapped": phase.filled(np.nan).astype(np.float32),
             "algorithm_id": np.asarray(algorithm_id),
             "expected_phase_deg": np.asarray(expected_phase_deg, dtype=np.float32),
@@ -415,20 +410,28 @@ def analyze_capture(
             ).astype(np.float32),
             "wavefront_aberration_rms_nm": np.float32(aberration_rms_nm),
             "wavefront_aberration_pv_nm": np.float32(aberration_pv_nm),
-            "zernike_coefficients_before_correction_waves": (
-                zernike_coefficients_before_correction.astype(np.float32)
-            ),
-            "aberration_component_waves": aberration_component_waves.astype(
-                np.float32
-            ),
-            "secondary_spherical_coefficient_waves": np.float32(
-                aberration_result.secondary_spherical_coefficient_waves
-            ),
+            "zernike_coefficients_before_correction_waves": np.asarray(json.dumps({
+                f"J{mode_index:02d} {mode_name}": float(coefficient)
+                for (mode_index, _, _, mode_name), coefficient in zip(
+                    ZERNIKE_MODES, zernike_coefficients_before_correction
+                )
+            })),
+            "zernike_coefficients_after_correction_waves": np.asarray(json.dumps({
+                f"J{mode_index:02d} {mode_name}": float(coefficient)
+                for (mode_index, _, _, mode_name), coefficient in zip(
+                    ZERNIKE_MODES, zernike_coefficients_after_correction
+                )
+            })),
+            "aberration_component_waves": np.asarray(json.dumps(dict(zip(
+                ("Astigmatism", "Coma", "Trefoil", "Primary Spherical"),
+                map(float, aberration_component_waves),
+            )))),
             "zernike_before_plot_rgb": zernike_before_plot_rgb,
             "zernike_after_plot_rgb": zernike_after_plot_rgb,
             "aberration_composition_plot_rgb": aberration_composition_plot_rgb,
+            "wavefront_surfaces_plot_rgb": wavefront_surfaces_plot_rgb,
             "residual_nm": residual_surface_nm.filled(np.nan).astype(np.float32),
-        })
+        }
         export_path = write_analysis_export(export_path, output_arrays)
         print("Saved phase analysis results:")
         print(export_path)
@@ -442,6 +445,7 @@ def analyze_capture(
         "zernike_before": zernike_before_plot_rgb,
         "zernike_after": zernike_after_plot_rgb,
         "aberration_composition": aberration_composition_plot_rgb,
+        "wavefront_surfaces": wavefront_surfaces_plot_rgb,
     }
     save_result_images(phase_result_dir, saved_image_arrays)
     print(f"Saved final phase-analysis PNGs to: {phase_result_dir}")
@@ -463,6 +467,12 @@ def analyze_capture(
             })
 
         results.extend([
+            {
+                "button": "3D wavefront surfaces",
+                "plot_type": "rgb",
+                "image": wavefront_surfaces_plot_rgb,
+                "title": "Measured wavefront surfaces",
+            },
             {
                 "button": "Wrapped",
                 "image": phase,
@@ -505,7 +515,7 @@ def analyze_capture(
                 "colorbar": "Surface error (nm)",
             },
             {
-                "button": "Zernike J1-J28 before",
+                "button": "Zernike J1-J11 before",
                 "plot_type": "bar",
                 "labels": zernike_bar_labels,
                 "values": zernike_coefficients_before_correction,
@@ -513,7 +523,7 @@ def analyze_capture(
                 "ylabel": "Coefficient / waves",
             },
             {
-                "button": "Zernike J1-J28 after",
+                "button": "Zernike J1-J11 after",
                 "plot_type": "bar",
                 "labels": zernike_after_bar_labels,
                 "values": zernike_coefficients_after_correction,

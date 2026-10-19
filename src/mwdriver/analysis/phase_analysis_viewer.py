@@ -16,13 +16,19 @@ def show_analysis_result_viewer(results):
         result = results[result_index]
         image_axis.clear()
         colorbar_axis.clear()
+        image_axis.set_axis_on()
         plot_type = result.get("plot_type", "image")
         if plot_type == "bar":
             image_axis.bar(result["labels"], result["values"])
             image_axis.axhline(0, linewidth=1)
             image_axis.set_xlabel("Noll index")
             image_axis.set_ylabel(result["ylabel"])
+        elif plot_type == "rgb":
+            image_axis.imshow(result["image"])
+            image_axis.set_axis_off()
+            colorbar_axis.set_axis_off()
         else:
+            colorbar_axis.set_axis_on()
             image = image_axis.imshow(
                 result["image"],
                 cmap=result["cmap"],
