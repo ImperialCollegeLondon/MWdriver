@@ -147,10 +147,10 @@ class CameraContractTests(unittest.TestCase):
                     self.assertFalse(save_dir.exists())
 
     def test_controller_applies_selected_layer_visibility_plan(self):
-        camera_layer = SimpleNamespace(visible=True)
-        roi_layer = SimpleNamespace(visible=True)
-        analysis_layers = [SimpleNamespace(visible=True), SimpleNamespace(visible=True)]
-        time_series_layers = [SimpleNamespace(visible=True), SimpleNamespace(visible=True)]
+        camera_layer = SimpleNamespace(visible=True, name="camera")
+        roi_layer = SimpleNamespace(visible=True, name="roi")
+        analysis_layers = [SimpleNamespace(visible=True, name=f"analysis_{index}") for index in range(2)]
+        time_series_layers = [SimpleNamespace(visible=True, name=f"capture_{index}") for index in range(2)]
 
         class FakeLayerList(list):
             def move(self, source_index, destination_index):
@@ -166,7 +166,7 @@ class CameraContractTests(unittest.TestCase):
         viewer = SimpleNamespace(
             layer=camera_layer,
             roi_layer=roi_layer,
-            viewer=SimpleNamespace(layers=layer_list),
+            viewer=SimpleNamespace(layers=layer_list, dims=SimpleNamespace(ndisplay=2)),
             phase_analysis_layer_records=[
                 {"layer": layer} for layer in analysis_layers
             ],
@@ -181,7 +181,8 @@ class CameraContractTests(unittest.TestCase):
 
         self.assertFalse(camera_layer.visible)
         self.assertTrue(roi_layer.visible)
-        self.assertIs(layer_list[-1], roi_layer)
+        self.assertIs(layer_list[-1], analysis_layers[1])
+        self.assertLess(layer_list.index(roi_layer), layer_list.index(analysis_layers[1]))
         self.assertEqual(
             [layer.visible for layer in analysis_layers],
             [False, True],
@@ -190,6 +191,15 @@ class CameraContractTests(unittest.TestCase):
             [layer.visible for layer in time_series_layers],
             [False, False],
         )
+        analysis_layers[1]._type_string = "surface"
+        camera.ThorlabsCameraViewer.apply_layer_visibility_plan(
+            viewer, "analysis", selected_layer=analysis_layers[1]
+        )
+        self.assertEqual(viewer.viewer.dims.ndisplay, 3)
+        self.assertFalse(roi_layer.visible)
+        camera.ThorlabsCameraViewer.apply_layer_visibility_plan(viewer, "preview")
+        self.assertEqual(viewer.viewer.dims.ndisplay, 2)
+        self.assertTrue(roi_layer.visible)
 
     def test_analysis_layer_operation_covers_add_replace_and_update(self):
         cases = [
@@ -274,6 +284,7 @@ class CameraContractTests(unittest.TestCase):
                     "Zernike J1-J11 residual after piston/tilt/defocus removal",
                     "zernike_after_plot_rgb",
                 ),
+                ("Interactive 3D: Tilt and defocus removed", "surface_defocus_removed"),
             ],
         )
 
@@ -288,7 +299,7 @@ class CameraContractTests(unittest.TestCase):
             [(
                 "Primary defocus removed; higher modes retained (nm OPD)",
                 "wavefront_aberration_nm",
-            )],
+            ), ("Interactive 3D: Tilt and defocus removed", "surface_defocus_removed")],
         )
 
     def test_analysis_layer_presentation_selects_name_rgb_cmap_and_limits(self):

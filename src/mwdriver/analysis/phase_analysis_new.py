@@ -403,6 +403,7 @@ def analyze_capture(
     if export_path is not None:
         output_arrays = {
             "roi_mask": roi_mask.copy(),
+            "wavelength_nm": np.float32(WAVELENGTH_NM),
             "wrapped": phase.filled(np.nan).astype(np.float32),
             "algorithm_id": np.asarray(algorithm_id),
             "expected_phase_deg": np.asarray(expected_phase_deg, dtype=np.float32),

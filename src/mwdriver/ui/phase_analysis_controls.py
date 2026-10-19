@@ -3,6 +3,7 @@
 import numpy as np
 from qtpy.QtWidgets import QComboBox, QLabel, QPushButton, QVBoxLayout, QWidget
 from mwdriver.domain.display_range import percentile_display_limits
+from mwdriver.domain.wavefront_surface import SURFACE_RESULTS
 
 
 def choose_analysis_layer_operation(
@@ -50,11 +51,16 @@ def build_phase_analysis_result_options(phase_analysis_results):
             "aberration_composition_plot_rgb",
         ),
     ]
-    return [
+    options = [
         (label, key)
         for label, key in result_options
         if key in phase_analysis_results
     ]
+    options.extend(
+        (label, key) for key, (label, source) in SURFACE_RESULTS.items()
+        if source in phase_analysis_results
+    )
+    return options
 
 
 def build_analysis_layer_presentation(result_key, result_data, source_name, result_name):

@@ -131,6 +131,16 @@ system directories.
 
 ### Troubleshooting
 
+Persistent diagnostic logging is disabled during normal desktop launches.
+The diagnostic helper remains available for troubleshooting; when explicitly
+enabled with `configure_diagnostics()`, it writes to `Documents/MWDriver/logs`.
+The `camera_*.log` file records layer transitions, Qt warnings and unhandled
+Python exceptions. Its companion `camera_*_fault.log` records Python thread
+stacks for native faults where Python's fault handler can run; an empty fault
+file is normal when no fault was captured. For a silent crash, retain both
+files from the affected run. Not every graphics-driver or forced process exit
+can produce a fault trace.
+
 | Symptom | Check |
 | --- | --- |
 | `No module named 'thorlabs_tsi_sdk'` or a request to install the official SDK | Install the vendor Python package ZIP using `.venv\Scripts\python.exe -m pip`, not a different Python interpreter. |
@@ -233,7 +243,8 @@ Offline analysis needs only NumPy and Matplotlib.
    python src\phase_analysis_new.py "$session"
    ```
 
-   With no arguments, either script discovers the latest capture. For
+   With no arguments, either script discovers the latest measurement in
+   `Documents/MWDriver`, excluding calibration sessions. For
    non-interactive analysis and a NumPy export, supply the session first:
 
    ```powershell
@@ -251,3 +262,130 @@ Old captures can still be opened with an explicit session path. To retain a
 saved ROI or trigger calibration, copy `roi_params.json`, `roi_mask.npy`, and
 `phase_trigger_positions.json` into `Documents/MWDriver` before using them.
 Legacy `phase_capture_*` folders copied into that directory remain discoverable.
+
+## Saved Results
+
+The desktop application saves user data outside the source tree:
+
+```text
+Documents/MWDriver/
+   roi_params.json
+   roi_mask.npy
+   phase_trigger_positions.json
+   calibrate_YYYYMMDD_HHMMSS/
+   measure_YYYYMMDD_HHMMSS/
+      measure_YYYYMMDD_HHMMSS_raw_stack.npy
+      measure_YYYYMMDD_HHMMSS_metadata.json
+      phase_0_YYYYMMDD_HHMMSS.png
+      ...
+      measured_phase_check.json
+      measured_vs_expected_phase_annotated.png
+      phase_analysis_results.npz
+      phase_intermediate_*.png
+      phase_analysis_result_images/
+```
+
+Analysis outputs appear after analysis is run. The GUI writes
+`phase_analysis_results.npz` automatically; the CLI writes an NPZ only when
+`--export` is supplied. Explicit CLI export paths are honoured. Intermediate
+diagnostics include phase numerator, denominator, magnitude and unwrapping
+stages; duplicate `phase_intermediate_01_input_*` images are no longer generated.
+The original six intensity frames remain in the raw stack and capture PNGs,
+not in the results NPZ. There is no separate manual-frame export workflow.
+
+### Phase and Aberration Analysis
+
+The Zernike fit includes **J1-J11**, ending at primary spherical. The composition
+plot reports astigmatism, coma, trefoil and primary spherical after piston,
+tilt and defocus removal. Coefficients are expressed in waves at the configured
+wavelength, currently **632.8 nm**.
+
+Analysis charts and intermediate diagnostic figures use a **1440 x 1080**
+canvas with antialiased text and larger horizontal coefficient labels. Scalar
+result images retain the input camera dimensions.
+
+`phase_analysis_result_images/wavefront_surfaces.png` compares tilt removed,
+tilt and defocus removed, and residual in three opaque 3D surface panels.
+All panels use wavefront OPD in nanometres, identical z-axis limits and one
+shared `viridis` colour bar. The axes are restricted to valid-pixel bounds;
+masked and non-finite data are excluded. Mesh faces crossing invalid pixels
+are omitted, and the display mesh is sampled to at most 100 rows and columns.
+The numerical result arrays are not downsampled.
+
+For interactive viewing in Napari, select **Interactive 3D: Tilt removed**,
+**Interactive 3D: Tilt and defocus removed**, or **Interactive 3D: Residual
+wavefront** in the analysis review selector. These choices switch a Surface
+layer between the three correction stages; drag to rotate and scroll to zoom.
+The surfaces use `viridis` with a shared OPD colour range in nanometres and
+exclude triangles crossing invalid pixels. Height is visually scaled relative
+to the pixel coordinates for inspection, using the same height scale across
+the three stages. The interactive mesh uses full-resolution pixels within the
+valid-data bounds, with no display downsampling; large ROIs require more graphics
+memory and may rotate more slowly. Selecting an image result or returning to camera
+preview restores 2D viewing. New NPZ exports also record `wavelength_nm`; older
+exports default to 632.8 nm when converting tilt-removed phase to OPD.
+
+Image, RGB plot and Surface layers are retained separately for each analysis
+run and reused when switching views. Inactive layers are hidden rather than
+deleted, avoiding an OpenGL texture-deletion crash during repeated 2D/3D
+transitions. The selected analysis layer is placed above the ROI layer; the
+ROI is hidden in surface views and brought forward again for ROI editing.
+Selecting a captured six-frame stack restores a time slider limited to frames
+0-5, independent of the height range of retained surfaces.
+
+The GUI passes the current ROI to analysis. For CLI analysis, pass
+`--roi-mask` explicitly to apply a saved Boolean ROI; without it, the spatial
+ROI defaults to the full frame. Pixels must also pass the PSI signal-validity
+filter, so the valid analysis area may be smaller than the ROI.
+
+### Results NPZ Contents
+
+| Key | Contents and units |
+| --- | --- |
+| `roi_mask` | Boolean original spatial ROI; `True` means inside. This is not the signal-filtered analysis mask. |
+| `algorithm_id` | PSI algorithm identifier. |
+| `expected_phase_deg` | Six expected phase positions in degrees. |
+| `wavelength_nm` | Analysis wavelength in nanometres. |
+| `wrapped` | Wrapped phase in radians. |
+| `unwrapped` | Unwrapped phase in radians. |
+| `tilt_removed` | Phase after piston and tilt removal, in radians. |
+| `wavefront_aberration_nm` | Wavefront OPD after piston, tilt and defocus removal, in nanometres. |
+| `wavefront_aberration_rms_nm` | RMS of that wavefront, in nanometres. |
+| `wavefront_aberration_pv_nm` | Robust PV: 99.9th minus 0.1st percentile, in nanometres. |
+| `residual_nm` | Residual surface error after additionally removing astigmatism and primary spherical, in nanometres. |
+| `zernike_coefficients_before_correction_waves` | JSON dictionary of signed J1-J11 coefficients before correction, in waves. |
+| `zernike_coefficients_after_correction_waves` | JSON dictionary of signed J1-J11 coefficients after correction, in waves. |
+| `aberration_component_waves` | JSON dictionary of non-negative astigmatism, coma, trefoil and primary spherical magnitudes, in waves. |
+| `zernike_before_plot_rgb`, `zernike_after_plot_rgb` | Rendered coefficient charts. |
+| `aberration_composition_plot_rgb` | Rendered aberration composition chart. |
+| `wavefront_surfaces_plot_rgb` | Rendered three-panel 3D wavefront comparison. |
+
+Numerical image arrays are `float32`, with excluded pixels represented by
+`NaN`. Rendered charts are `uint8` RGB arrays of shape `(1080, 1440, 3)`.
+The residual array uses surface error, whereas the 3D comparison converts it
+to wavefront OPD by multiplying by two.
+
+Coefficient dictionaries are stored as JSON strings rather than pickled Python
+objects, so the archive can be opened with `allow_pickle=False`:
+
+```python
+import json
+from pathlib import Path
+
+import numpy as np
+
+session = Path(r"C:\path\to\Documents\MWDriver\measure_YYYYMMDD_HHMMSS")
+with np.load(session / "phase_analysis_results.npz", allow_pickle=False) as archive:
+   results = {name: archive[name] for name in archive.files}
+
+coefficients = json.loads(
+   results["zernike_coefficients_after_correction_waves"].item()
+)
+print("Primary spherical (waves):", coefficients["J11 Primary Spherical"])
+roi_mask = results["roi_mask"]
+wavefront_nm = np.ma.masked_invalid(results["wavefront_aberration_nm"])
+```
+
+Older NPZ files may contain positional coefficient arrays instead of JSON
+dictionaries and may include `phase_0` through `phase_5` rather than an ROI
+mask. Rerun analysis to generate the current export format.
