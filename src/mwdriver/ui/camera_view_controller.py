@@ -64,6 +64,14 @@ class CameraViewController:
         QTimer.singleShot(250, self.place_camera_adjust_controls_in_layer_controls)
         QTimer.singleShot(300, self.place_camera_status_controls_in_layer_controls)
 
+    def on_layer_removing(self, event):
+        layer = self.viewer.layers[event.index]
+        LOGGER.debug("Preparing layer deletion name=%s type=%s", layer.name, getattr(layer, "_type_string", None))
+        if getattr(layer, "_type_string", None) == "surface":
+            self.viewer.dims.ndisplay = 2
+        self.viewer.window._qt_viewer.canvas._scene_canvas.set_current()
+        LOGGER.debug("OpenGL canvas made current before layer deletion")
+
     def on_phase_analysis_layer_removed(self, event):
         LOGGER.debug("Layer removed name=%s type=%s", event.value.name, getattr(event.value, "_type_string", None))
         self.phase_analysis_layer_records = [
@@ -194,6 +202,8 @@ class CameraViewController:
         try:
             self._show_selected_phase_analysis_result(create_new_layer)
             LOGGER.info("Analysis transition complete")
+            if hasattr(self, "simplify_layer_controls"):
+                QTimer.singleShot(0, self.simplify_layer_controls)
             QTimer.singleShot(0, lambda: LOGGER.debug("Analysis next event-loop tick"))
         except Exception:
             LOGGER.exception("Analysis transition failed")
@@ -312,7 +322,7 @@ class CameraViewController:
             "analysis",
             selected_layer=self.phase_analysis_layer,
         )
-        self.viewer.layers.selection.active = self.phase_analysis_layer
+        self.viewer.layers.selection.select_only(self.phase_analysis_layer)
         LOGGER.debug("Active layer set; resetting camera view")
         self.viewer.reset_view()
         LOGGER.debug("Camera view reset")

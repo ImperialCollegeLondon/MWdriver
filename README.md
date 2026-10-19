@@ -223,6 +223,21 @@ Offline analysis needs only NumPy and Matplotlib.
    To analyse a particular saved stack, select its layer and choose
    **Camera Tools > Analyze Selected Stack**. **Analyze Latest Capture** remains
    available when you want the most recently saved phase capture instead.
+   To reopen a dataset from an earlier run, choose **File > Reload Dataset...**
+   and select its `*_raw_stack.npy` file. The six-frame stack and adjacent capture
+   metadata are restored as a new layer; choose **Analyze Selected Stack** to
+   analyse it using the current ROI. Loading does not change camera settings or
+   replace the current ROI. Older stacks without metadata default to the
+   90-degree phase-step method.
+   To review existing analysis without recalculating, choose **File > Reload
+   Analysis...** and select `phase_analysis_results.npz`. This creates a new
+   analysis view with the saved images, charts and available interactive 3D
+   surfaces. It does not reload the raw capture stack or change the current ROI
+   or camera settings; use **Reload Dataset...** separately when needed.
+   If the managed ROI layer has been deleted, **ROI > Reload ROI** recreates it
+   and restores the last separately saved ellipse from `Documents/MWDriver`.
+   The restored layer reconnects mask updates and opens in 2D selection mode.
+   This action does not import an ROI from a capture or analysis archive.
    Each completed analysis creates a separate results layer. Select an analysis
    layer to make the review controls refer to that run, then choose among its
    reconstructed phase and aberration results. The six captured phase images
@@ -332,6 +347,11 @@ transitions. The selected analysis layer is placed above the ROI layer; the
 ROI is hidden in surface views and brought forward again for ROI editing.
 Selecting a captured six-frame stack restores a time slider limited to frames
 0-5, independent of the height range of retained surfaces.
+
+Switching analysis views exclusively selects the target layer and refreshes
+its controls. Surface views expose shading, opacity and blending as well as
+colormap and contrast limits. Explicitly deleting a surface first returns the
+viewer to 2D and makes its OpenGL canvas current before releasing resources.
 
 The GUI passes the current ROI to analysis. For CLI analysis, pass
 `--roi-mask` explicitly to apply a saved Boolean ROI; without it, the spatial

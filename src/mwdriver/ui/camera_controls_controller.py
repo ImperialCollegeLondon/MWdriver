@@ -84,6 +84,21 @@ class CameraControlsController:
         qt_window = self.viewer.window._qt_window
         menubar = qt_window.menuBar()
 
+        file_menu = next((
+            action.menu() for action in menubar.actions()
+            if action.text().replace("&", "").lower() == "file"
+        ), None)
+        if file_menu is None:
+            file_menu = menubar.addMenu("File")
+        self.reload_dataset_action = QAction("Reload Dataset...", qt_window)
+        self.reload_dataset_action.setStatusTip("Open a saved six-frame camera dataset")
+        self.reload_dataset_action.triggered.connect(self.reload_dataset_from_file)
+        file_menu.addAction(self.reload_dataset_action)
+        self.reload_analysis_action = QAction("Reload Analysis...", qt_window)
+        self.reload_analysis_action.setStatusTip("Open saved phase-analysis results without recalculating")
+        self.reload_analysis_action.triggered.connect(self.reload_analysis_from_file)
+        file_menu.addAction(self.reload_analysis_action)
+
         self.camera_menu = menubar.addMenu("Camera Tools")
 
         self.start_button = QAction("Start Stream", qt_window)

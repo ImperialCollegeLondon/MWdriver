@@ -9,9 +9,12 @@ from pathlib import Path
 
 import numpy as np
 from qtpy.QtCore import QTimer
+from qtpy.QtWidgets import QFileDialog
 
 from mwdriver.capture.phase_capture_storage import PhaseSaveResult
+from mwdriver.domain.phase_psi import get_algorithm_id_from_metadata, get_algorithm
 from mwdriver.paths import RESULTS_DIR
+from mwdriver.ui.phase_analysis_controls import build_phase_analysis_result_options
 
 
 SCRIPT_DIR = str(Path(__file__).resolve().parents[2])
@@ -20,6 +23,105 @@ PHASE_ANALYSIS_SCRIPT = os.path.join(SCRIPT_DIR, "phase_analysis_new.py")
 
 
 class CameraPhaseAnalysisController:
+    def reload_analysis_from_file(self):
+        if self.phase_capture_active or self.recalibration_active:
+            self.status_label.setText("Status: Wait for capture or calibration to finish before loading analysis")
+            return
+        filename, _ = QFileDialog.getOpenFileName(
+            self.viewer.window._qt_window,
+            "Reload Analysis",
+            SAVE_DIR,
+            "Phase-analysis results (*.npz)",
+        )
+        if not filename:
+            return
+        try:
+            self.load_saved_analysis(filename)
+        except Exception as error:
+            self.status_label.setText(f"Status: Could not reload analysis: {error}")
+
+    def load_saved_analysis(self, filename):
+        output_path = Path(filename).resolve()
+        with np.load(output_path, allow_pickle=False) as archive:
+            results = {key: np.asarray(archive[key]) for key in archive.files}
+        options = build_phase_analysis_result_options(results)
+        if not options:
+            raise ValueError("The archive contains no recognised analysis images")
+        for _, key in options:
+            if key not in results:
+                continue
+            array = results[key]
+            if array.dtype.kind not in "uif" or not (
+                array.ndim == 2 or (array.ndim == 3 and array.shape[-1] in (3, 4))
+            ) or array.size == 0:
+                raise ValueError(f"Invalid analysis image: {key}")
+        selected_key = "wrapped" if "wrapped" in results else options[0][1]
+        self.phase_analysis_results = results
+        self.phase_analysis_source_stack_name = output_path.parent.name
+        self.phase_analysis_view_active = True
+        self.create_phase_analysis_controls(selected_key=selected_key)
+        self.show_selected_phase_analysis_result(create_new_layer=True)
+        if self.view_phase_analysis_button is not None:
+            self.view_phase_analysis_button.setText("Return to Camera Preview")
+        self.sync_stream_with_active_layer()
+        self.status_label.setText(f"Status: Reloaded analysis {output_path.parent.name}")
+
+    def reload_dataset_from_file(self):
+        if self.phase_capture_active or self.recalibration_active:
+            self.status_label.setText("Status: Wait for capture or calibration to finish before loading a dataset")
+            return
+        filename, _ = QFileDialog.getOpenFileName(
+            self.viewer.window._qt_window,
+            "Reload Dataset",
+            SAVE_DIR,
+            "Camera raw stacks (*_raw_stack.npy);;NumPy arrays (*.npy)",
+        )
+        if not filename:
+            return
+        try:
+            self.load_saved_dataset(filename)
+        except Exception as error:
+            self.status_label.setText(f"Status: Could not reload dataset: {error}")
+
+    def load_saved_dataset(self, filename):
+        raw_path = Path(filename).resolve()
+        frames = np.load(raw_path, allow_pickle=False)
+        if frames.ndim != 3 or frames.shape[0] != 6 or min(frames.shape[1:]) == 0:
+            raise ValueError(f"Expected six-frame stack (6, height, width), got {frames.shape}")
+        if frames.dtype.kind not in "uif":
+            raise ValueError("Camera frames must contain real numeric intensities")
+        metadata = {}
+        metadata_path = raw_path.with_name(
+            raw_path.name.removesuffix("_raw_stack.npy") + "_metadata.json"
+        )
+        if metadata_path.is_file():
+            with metadata_path.open("r", encoding="utf-8") as file:
+                metadata = json.load(file)
+        algorithm_id = get_algorithm_id_from_metadata(metadata)
+        layer = self.viewer.add_image(
+            frames,
+            name=f"Saved capture: {raw_path.parent.name}",
+            axis_labels=("time", "y", "x"),
+            colormap="gray",
+            metadata={
+                "session_dir": str(raw_path.parent),
+                "raw_stack_path": str(raw_path),
+                "algorithm_id": algorithm_id,
+                "expected_phase_deg": list(get_algorithm(algorithm_id)["expected_phase_deg"]),
+                "capture_metadata": metadata,
+            },
+        )
+        self.phase_capture_time_series_layers.append(layer)
+        self.phase_analysis_view_active = False
+        self.apply_layer_visibility_plan("time_series", selected_layer=layer)
+        self.viewer.layers.selection.active = layer
+        if self.view_phase_analysis_button is not None:
+            self.view_phase_analysis_button.setText("View Analysis Results")
+        self.sync_stream_with_active_layer()
+        self.viewer.reset_view()
+        self.status_label.setText(f"Status: Reloaded dataset {raw_path.parent.name}")
+        return layer
+
     def find_latest_phase_analysis_session(self):
         latest_result = self.latest_phase_save_result
         if isinstance(latest_result, PhaseSaveResult) and latest_result.save_success:

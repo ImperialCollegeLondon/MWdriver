@@ -12,6 +12,29 @@ from mwdriver.domain.wavefront_surface import SURFACE_RESULTS, build_wavefront_s
 
 
 class WavefrontSurfaceTests(unittest.TestCase):
+    def test_deletion_prepares_2d_and_current_gl_context(self):
+        from mwdriver.ui.camera_view_controller import CameraViewController
+
+        operations = []
+
+        class Dims:
+            @property
+            def ndisplay(self):
+                return 3
+
+            @ndisplay.setter
+            def ndisplay(self, value):
+                operations.append(("ndisplay", value))
+
+        surface = SimpleNamespace(name="surface", _type_string="surface")
+        canvas = SimpleNamespace(set_current=lambda: operations.append(("context", "current")))
+        controller = SimpleNamespace(viewer=SimpleNamespace(
+            layers=[surface], dims=Dims(),
+            window=SimpleNamespace(_qt_viewer=SimpleNamespace(canvas=SimpleNamespace(_scene_canvas=canvas))),
+        ))
+        CameraViewController.on_layer_removing(controller, SimpleNamespace(index=0))
+        self.assertEqual(operations, [("ndisplay", 2), ("context", "current")])
+
     def test_time_series_range_excludes_hidden_surface_height(self):
         from napari.components import ViewerModel
         from mwdriver.ui.camera_view_controller import CameraViewController
@@ -61,6 +84,7 @@ class WavefrontSurfaceTests(unittest.TestCase):
         }
         layers = []
         selection = SimpleNamespace(active=None)
+        selection.select_only = lambda layer: setattr(selection, "active", layer)
 
         class Layers(list):
             def remove(self, layer):
@@ -116,6 +140,30 @@ class WavefrontSurfaceTests(unittest.TestCase):
             self.assertIs(viewer.phase_analysis_layer, image_layer)
             self.assertFalse(viewer._analysis_layer_switching)
         self.assertEqual(len(layer_list), 2)
+
+    def test_switch_exclusively_selects_reused_surface(self):
+        from napari.components import ViewerModel
+        from mwdriver.ui.camera_view_controller import CameraViewController
+
+        class Controller(CameraViewController):
+            def apply_layer_visibility_plan(self, mode, selected_layer=None):
+                pass
+
+        controller = Controller()
+        controller.viewer = ViewerModel()
+        controller.phase_analysis_layer = None
+        controller.phase_analysis_layer_records = []
+        controller.phase_analysis_source_stack_name = "test"
+        controller.phase_analysis_results = {"tilt_removed": np.arange(36).reshape(6, 6)}
+        selected = ["tilt_removed"]
+        controller.phase_analysis_selector = SimpleNamespace(
+            currentData=lambda: selected[0], currentText=lambda: selected[0]
+        )
+        for key in ("tilt_removed", "surface_tilt_removed", "tilt_removed", "surface_tilt_removed"):
+            selected[0] = key
+            controller.show_selected_phase_analysis_result()
+            self.assertEqual(set(controller.viewer.layers.selection), {controller.phase_analysis_layer})
+            self.assertIs(controller.viewer.layers.selection.active, controller.phase_analysis_layer)
 
     def test_selection_callbacks_are_ignored_during_layer_replacement(self):
         from mwdriver.ui.camera_view_controller import CameraViewController

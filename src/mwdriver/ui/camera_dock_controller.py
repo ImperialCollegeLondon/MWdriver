@@ -121,6 +121,9 @@ class CameraDockController:
             "gamma",
             "colormap",
         }
+        active_layer = self.viewer.layers.selection.active
+        if getattr(active_layer, "_type_string", None) == "surface":
+            allowed_labels.update({"opacity", "blending", "shading"})
 
         image_control_labels = {
             "opacity",

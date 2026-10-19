@@ -243,12 +243,25 @@ class CameraRoiController:
                 raise ValueError("Only ellipse ROIs are supported.")
 
             self.waiting_for_roi_finish = False
+            if self.roi_layer is None or not any(
+                layer is self.roi_layer for layer in self.viewer.layers
+            ):
+                self.roi_layer = self.viewer.add_shapes(
+                    name="ROI",
+                    ndim=2,
+                    shape_type="ellipse",
+                    edge_width=3,
+                    edge_color="red",
+                    face_color=[1, 0, 0, 0.15],
+                )
+                self.roi_layer.events.data.connect(self.on_roi_data_changed)
             self.roi_layer.data = []
             self.roi_layer.add(shape_data, shape_type=shape_type)
             self.roi_layer.selected_data = {0}
-            self.roi_layer.mode = "select"
             self.roi_layer.visible = True
+            self.viewer.dims.ndisplay = 2
             self.viewer.layers.selection.active = self.roi_layer
+            self.roi_layer.mode = "select"
 
             self.roi_params = roi_params
             self.roi_mask = None

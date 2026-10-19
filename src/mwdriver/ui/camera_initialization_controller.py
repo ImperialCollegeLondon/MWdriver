@@ -84,6 +84,9 @@ class CameraInitializationController:
         QTimer.singleShot(1000, self.simplify_napari_interface)
 
         try:
+            self.viewer.layers.events.removing.connect(
+                self.on_layer_removing
+            )
             self.viewer.layers.events.removed.connect(
                 self.on_phase_analysis_layer_removed
             )
