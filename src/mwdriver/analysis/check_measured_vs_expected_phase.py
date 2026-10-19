@@ -10,7 +10,7 @@ Key changes
     calibration script.
 2. The program is non-interactive and can be launched automatically by
     camera.py.
-3. The result figure and JSON are saved into the exact phase_capture_* folder.
+3. The result figure and JSON are saved into the exact measurement folder.
 """
 
 from pathlib import Path
@@ -24,6 +24,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from mwdriver.paths import RESULTS_DIR
 from mwdriver.domain.phase_psi import (
     ALGORITHMS as PSI_ALGORITHMS,
     DEFAULT_ALGORITHM as DEFAULT_PSI_ALGORITHM,
@@ -36,7 +37,7 @@ from mwdriver.domain.phase_psi import (
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parents[2]
-CAPTURE_DIR = BASE_DIR / "captured_frames"
+CAPTURE_DIR = RESULTS_DIR
 
 REFERENCE_CONFIG_PATH = (
     BASE_DIR
@@ -70,13 +71,18 @@ def find_capture_folder(session_dir=None):
         return folder
 
     session_dirs = sorted(
-        CAPTURE_DIR.glob("phase_capture_*"),
+        (
+            path
+            for pattern in ("measure_*", "phase_capture_*")
+            for path in CAPTURE_DIR.glob(pattern)
+            if path.is_dir() and any(path.glob("*_raw_stack.npy"))
+        ),
         key=lambda path: path.stat().st_mtime,
     )
 
     if not session_dirs:
         raise FileNotFoundError(
-            f"No phase_capture_* folders found in:\n{CAPTURE_DIR}"
+            f"No measure_* folders found in:\n{CAPTURE_DIR}"
         )
 
     return session_dirs[-1]

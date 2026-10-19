@@ -27,12 +27,6 @@ from mwdriver.ui.camera_dock_controller import CameraDockController
 from mwdriver.ui.camera_phase_analysis_controller import (
     CameraPhaseAnalysisController,
     PHASE_ANALYSIS_SCRIPT,
-)
-from mwdriver.ui.camera_manual_capture_controller import (
-    CameraManualCaptureController,
-    FrameSaveWorker,
-    MANUAL_CAPTURE_COUNT,
-    MANUAL_CAPTURE_INTERVAL_MS,
     SAVE_DIR,
     SCRIPT_DIR,
 )
@@ -50,6 +44,7 @@ from mwdriver.domain.phase_psi import (
     LEGACY_90_DEG,
     get_algorithm as get_psi_algorithm,
 )
+from mwdriver.paths import RESULTS_DIR
 
 
 # ============================================================
@@ -84,7 +79,7 @@ print("Phase analysis viewer:", PHASE_ANALYSIS_SCRIPT)
 # Recalibration parameters.
 RECALIBRATION_CONFIG = DEFAULT_RECALIBRATION_CONFIG
 RECALIBRATION_TRIGGER_JSON_PATH = os.path.join(
-    SCRIPT_DIR,
+    RESULTS_DIR,
     "phase_trigger_positions.json"
 )
 RECALIBRATION_TRIGGER_UPDATE_ACK_TIMEOUT_S = 1.5
@@ -103,7 +98,6 @@ class ThorlabsCameraViewer(
     CameraRuntimeController,
     CameraPhaseAnalysisController,
     CameraRecalibrationController,
-    CameraManualCaptureController,
     CameraInitializationController,
     CameraPhaseCommandController,
     QObject,
@@ -138,8 +132,6 @@ class ThorlabsCameraViewer(
         self.phase_capture_count = 0
         self.phase_capture_start_time = None
         self.phase_capture_mode_enter_time_s = None
-
-        self.initialize_manual_capture_state()
 
         self.save_worker = None
         self.save_thread = None

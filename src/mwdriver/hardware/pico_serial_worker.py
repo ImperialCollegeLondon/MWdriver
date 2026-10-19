@@ -20,8 +20,6 @@ class PicoSerialWorker(QObject):
     phase_requested = Signal(int)
     phase_session_done = Signal()
 
-    capture_requested = Signal()
-
     status_ready = Signal(str)
     message_ready = Signal(str)
 
@@ -145,8 +143,6 @@ class PicoSerialWorker(QObject):
                 self.message_ready.emit(f"Pico phase parse error: {error}")
         elif line == "TRIANGLE_DONE":
             self.phase_session_done.emit()
-        elif line == "START_CAPTURE":
-            self.capture_requested.emit()
 
     def run(self):
         self.running = True

@@ -11,10 +11,11 @@ import numpy as np
 from qtpy.QtCore import QTimer
 
 from mwdriver.capture.phase_capture_storage import PhaseSaveResult
+from mwdriver.paths import RESULTS_DIR
 
 
 SCRIPT_DIR = str(Path(__file__).resolve().parents[2])
-SAVE_DIR = os.path.join(SCRIPT_DIR, "captured_frames")
+SAVE_DIR = str(RESULTS_DIR)
 PHASE_ANALYSIS_SCRIPT = os.path.join(SCRIPT_DIR, "phase_analysis_new.py")
 
 
@@ -25,7 +26,7 @@ class CameraPhaseAnalysisController:
             session_dir = latest_result.session_dir
             if (
                 session_dir
-                and os.path.basename(session_dir).startswith("phase_capture_")
+                and os.path.basename(session_dir).startswith(("measure_", "phase_capture_"))
                 and os.path.isdir(session_dir)
                 and any(
                     filename.endswith("_raw_stack.npy")
@@ -37,7 +38,7 @@ class CameraPhaseAnalysisController:
         candidates = []
         if os.path.isdir(SAVE_DIR):
             for entry in os.scandir(SAVE_DIR):
-                if not entry.is_dir() or not entry.name.startswith("phase_capture_"):
+                if not entry.is_dir() or not entry.name.startswith(("measure_", "phase_capture_")):
                     continue
 
                 raw_stack_paths = [

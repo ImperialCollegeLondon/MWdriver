@@ -22,10 +22,11 @@ from mwdriver.capture.phase_capture_storage import (
 )
 from mwdriver.domain.phase_psi import DEFAULT_ALGORITHM
 from mwdriver.domain.recalibration import DEFAULT_RECALIBRATION_CONFIG
+from mwdriver.paths import RESULTS_DIR
 
 
 MODULE_DIR = Path(__file__).resolve().parents[2]
-DEFAULT_SAVE_DIR = str(MODULE_DIR / "captured_frames")
+DEFAULT_SAVE_DIR = str(RESULTS_DIR)
 DEFAULT_PHASE_CHECK_SCRIPT = str(MODULE_DIR / "check_measured_vs_expected_phase.py")
 DEFAULT_PHASE_CHECK_TIMEOUT_S = 180
 
@@ -42,7 +43,7 @@ class PhaseSaveWorker(QObject):
         frame_timestamps=None,
         roi_mask=None,
         save_dir=DEFAULT_SAVE_DIR,
-        session_prefix="phase_capture",
+        session_prefix="measure",
         trigger_positions_ms=None,
         psi_algorithm_id=DEFAULT_ALGORITHM,
         phase_check_script=DEFAULT_PHASE_CHECK_SCRIPT,

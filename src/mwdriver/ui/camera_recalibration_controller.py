@@ -3,9 +3,11 @@
 import json
 import os
 import shutil
+import stat
 import time
 
 import numpy as np
+from mwdriver.paths import RESULTS_DIR
 from qtpy.QtCore import QCoreApplication
 
 from mwdriver.domain.phase_psi import LEGACY_90_DEG, get_algorithm as get_psi_algorithm
@@ -23,10 +25,20 @@ from mwdriver.domain.recalibration import (
 
 RECALIBRATION_CONFIG = DEFAULT_RECALIBRATION_CONFIG
 RECALIBRATION_TRIGGER_JSON_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    RESULTS_DIR,
     "phase_trigger_positions.json",
 )
 RECALIBRATION_TRIGGER_UPDATE_ACK_TIMEOUT_S = 1.5
+
+
+def remove_calibration_session(session_dir):
+    def retry_readonly(operation, path, error):
+        if not isinstance(error, PermissionError):
+            raise error
+        os.chmod(path, stat.S_IWRITE)
+        operation(path)
+
+    shutil.rmtree(session_dir, onexc=retry_readonly)
 
 
 class CameraRecalibrationController:
@@ -152,6 +164,7 @@ class CameraRecalibrationController:
         calibrations[self.selected_psi_algorithm_id] = calibration
         payload = {"calibrations": calibrations}
 
+        os.makedirs(os.path.dirname(RECALIBRATION_TRIGGER_JSON_PATH), exist_ok=True)
         with open(
             RECALIBRATION_TRIGGER_JSON_PATH,
             "w",
@@ -314,7 +327,7 @@ class CameraRecalibrationController:
             if not os.path.isdir(session_dir):
                 continue
             try:
-                shutil.rmtree(session_dir)
+                remove_calibration_session(session_dir)
                 print(
                     "Removed first-round recalibration artifact before auto-restart:",
                     session_dir,
@@ -415,8 +428,15 @@ class CameraRecalibrationController:
     def keep_only_recalibration_candidate(self, selected_candidate):
         selected_session_dir = os.path.abspath(selected_candidate["session_dir"])
 
-        for candidate in self.recalibration_candidates:
-            candidate_session_dir = os.path.abspath(candidate["session_dir"])
+        candidate_dirs = [
+            os.path.abspath(candidate["session_dir"])
+            for candidate in self.recalibration_candidates
+        ]
+        coarse_session_dir = getattr(self, "recalibration_coarse_session_dir", None)
+        if coarse_session_dir:
+            candidate_dirs.append(os.path.abspath(coarse_session_dir))
+
+        for candidate_session_dir in sorted(set(candidate_dirs)):
             if candidate_session_dir == selected_session_dir:
                 continue
 
@@ -424,8 +444,10 @@ class CameraRecalibrationController:
                 continue
 
             try:
-                shutil.rmtree(candidate_session_dir)
+                remove_calibration_session(candidate_session_dir)
                 print("Removed rejected recalibration session:", candidate_session_dir)
+                if coarse_session_dir and candidate_session_dir == os.path.abspath(coarse_session_dir):
+                    self.recalibration_coarse_session_dir = None
             except Exception as error:
                 print(
                     "Could not remove rejected recalibration session:",

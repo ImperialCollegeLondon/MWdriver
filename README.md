@@ -194,7 +194,16 @@ Offline analysis needs only NumPy and Matplotlib.
 
 3. Set the camera exposure and ROI, then choose **Start Phase Capture**.
    The controller temporarily uses external triggering, saves six frames under
-   `src/captured_frames/phase_capture_*`, and automatically runs the phase checker.
+   `Documents/MWDriver/measure_YYYYMMDD_HHMMSS`, and automatically runs the phase checker.
+   Windows' actual Documents location is used, including redirected or OneDrive
+   Documents folders. Calibration captures, including verification runs, use
+   `calibrate_YYYYMMDD_HHMMSS`.
+   On calibration completion, only the selected verification capture is retained;
+   the coarse capture and rejected verification captures are removed. If
+   calibration aborts before selecting a verification capture, diagnostic data
+   remains available.
+   Saved ROI files and `phase_trigger_positions.json` also live in
+   `Documents/MWDriver`. The directory is created when results are first saved.
    Sessions include a `*_raw_stack.npy`, PNG frames, and ROI/session metadata.
    Each completed stack is also added to Napari as its own `time, y, x` image
    layer, with a time slider for stepping through the six frames. Select a
@@ -217,16 +226,18 @@ Offline analysis needs only NumPy and Matplotlib.
    automatically. Older captures without method metadata are treated as 90-degree.
 4. Inspect a saved session manually or run full analysis:
 
-   ```bash
-   python src\check_measured_vs_expected_phase.py captured_frames\phase_capture_YYYYMMDD_HHMMSS
-   python src\phase_analysis_new.py captured_frames\phase_capture_YYYYMMDD_HHMMSS
+   ```powershell
+   $results = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'MWDriver'
+   $session = Join-Path $results 'measure_YYYYMMDD_HHMMSS'
+   python src\check_measured_vs_expected_phase.py "$session"
+   python src\phase_analysis_new.py "$session"
    ```
 
    With no arguments, either script discovers the latest capture. For
    non-interactive analysis and a NumPy export, supply the session first:
 
-   ```bash
-   python src\phase_analysis_new.py captured_frames\phase_capture_YYYYMMDD_HHMMSS --no-viewer --export results.npz
+   ```powershell
+   python src\phase_analysis_new.py "$session" --no-viewer --export (Join-Path $session 'phase_analysis_results.npz')
    ```
 
 The checker writes `measured_phase_check.json` and
@@ -234,3 +245,9 @@ The checker writes `measured_phase_check.json` and
 saves intermediate PNGs and `phase_analysis_result_images/` there. Review
 analysis constants for your optical setup, particularly `WAVELENGTH_NM`
 (currently 632.8) in `src/mwdriver/analysis/phase_analysis_new.py`.
+
+Existing captures and settings in the repository are not moved automatically.
+Old captures can still be opened with an explicit session path. To retain a
+saved ROI or trigger calibration, copy `roi_params.json`, `roi_mask.npy`, and
+`phase_trigger_positions.json` into `Documents/MWDriver` before using them.
+Legacy `phase_capture_*` folders copied into that directory remain discoverable.

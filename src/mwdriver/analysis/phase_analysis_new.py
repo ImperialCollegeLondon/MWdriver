@@ -30,10 +30,11 @@ from mwdriver.analysis.phase_analysis_plots import (
     style_plot_text,
 )
 from mwdriver.analysis.phase_analysis_viewer import show_analysis_result_viewer
+from mwdriver.paths import RESULTS_DIR
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
-CAPTURE_DIR = BASE_DIR / "captured_frames"
+CAPTURE_DIR = RESULTS_DIR
 WAVELENGTH_NM = 632.8
 
 @dataclass(frozen=True)
@@ -124,7 +125,7 @@ def build_argument_parser():
         "session_dir",
         nargs="?",
         type=Path,
-        help="capture session directory; defaults to the latest phase_capture session",
+        help="capture session directory; defaults to the latest measure session in Documents/MWDriver",
     )
     parser.add_argument(
         "--no-viewer",
@@ -174,11 +175,13 @@ def find_capture_input(session_dir=None):
         return session_dir, raw_stack_files[0]
 
     raw_stack_files = list(
-        CAPTURE_DIR.glob("phase_capture_*/*_raw_stack.npy")
+        path
+        for pattern in ("measure_*/*_raw_stack.npy", "phase_capture_*/*_raw_stack.npy")
+        for path in CAPTURE_DIR.glob(pattern)
     )
     if not raw_stack_files:
         raise FileNotFoundError(
-            f"No phase_capture_* raw stack found in:\n{CAPTURE_DIR}"
+            f"No measure_* raw stack found in:\n{CAPTURE_DIR}"
         )
 
     raw_stack_path = max(

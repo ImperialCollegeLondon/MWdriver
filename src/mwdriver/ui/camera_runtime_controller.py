@@ -255,8 +255,6 @@ class CameraRuntimeController:
         self.pico_worker.phase_requested.connect(self.capture_phase_frame)
         self.pico_worker.phase_session_done.connect(self.on_phase_session_done)
 
-        self.pico_worker.capture_requested.connect(self.request_manual_capture)
-
         self.pico_worker.status_ready.connect(self.update_pico_status)
         self.pico_worker.message_ready.connect(self.print_pico_message)
 

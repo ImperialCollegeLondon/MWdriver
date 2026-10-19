@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+from mwdriver.paths import RESULTS_DIR
 from qtpy.QtCore import QThread, QTimer
 
 from mwdriver.capture.phase_capture_frame_filter import (
@@ -38,7 +39,7 @@ RECALIBRATION_CONFIG = DEFAULT_RECALIBRATION_CONFIG
 EXTERNAL_TRIGGER_EDGE = "rise"
 TRIANGLE_WAVE_SUPPLY_VOLTAGE = 3.3
 MODULE_DIR = str(Path(__file__).resolve().parents[2])
-SAVE_DIR = os.path.join(MODULE_DIR, "captured_frames")
+SAVE_DIR = str(RESULTS_DIR)
 
 def triangle_wave_falling_edge_voltage(trigger_position_ms):
     """
@@ -822,9 +823,7 @@ class PhaseCaptureController:
         else:
             roi_mask_snapshot = None
 
-        session_prefix = "phase_capture"
-        if self.recalibration_active and self.recalibration_stage == "coarse_capture":
-            session_prefix = "phase_calibration"
+        session_prefix = "calibrate" if self.recalibration_active else "measure"
 
         self.save_thread = QThread()
         self.save_worker = PhaseSaveWorker(

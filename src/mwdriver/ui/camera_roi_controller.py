@@ -15,6 +15,7 @@ from mwdriver.domain.roi_geometry import (
 )
 from mwdriver.ui.roi_controls import create_roi_menu
 from mwdriver.ui.roi_storage import load_roi_files, save_roi_files
+from mwdriver.paths import RESULTS_DIR
 
 
 SCRIPT_DIR = str(Path(__file__).resolve().parents[2])
@@ -233,7 +234,7 @@ class CameraRoiController:
     def reload_roi(self):
         try:
             roi_params, roi_mask, shape_data, shape_type = load_roi_files(
-                SCRIPT_DIR,
+                RESULTS_DIR,
                 image_height=self.height,
                 image_width=self.width,
                 display_downsample=self.display_downsample,
@@ -257,8 +258,8 @@ class CameraRoiController:
             self.status_label.setText("Status: Saved ROI reloaded")
             print(
                 "Saved ROI reloaded:",
-                os.path.join(SCRIPT_DIR, "roi_params.json"),
-                os.path.join(SCRIPT_DIR, "roi_mask.npy"),
+                os.path.join(RESULTS_DIR, "roi_params.json"),
+                os.path.join(RESULTS_DIR, "roi_mask.npy"),
             )
 
         except Exception as error:
@@ -276,7 +277,7 @@ class CameraRoiController:
         self.refresh_roi_mask()
 
         roi_json_path, roi_mask_path = save_roi_files(
-            os.getcwd(),
+            RESULTS_DIR,
             self.roi_params,
             self.roi_mask,
         )
