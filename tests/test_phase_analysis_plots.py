@@ -30,7 +30,8 @@ class PhaseAnalysisPlotTests(unittest.TestCase):
         masked = (xx < 3) | (yy < 2) | ((xx == 15) & (yy == 12))
         surface = np.ma.array(xx + yy, mask=masked, dtype=float)
         surface.data[masked] = 1e12
-        surfaces = (surface, surface * 0.5, surface * 0.1)
+        surfaces = (surface, surface * 500.0, surface * -100.0)
+        limits = np.percentile(surface.compressed(), [0.1, 99.1])
         original_plot = Axes3D.plot_trisurf
 
         def check_mesh(axis, mesh, heights, **kwargs):
@@ -52,11 +53,11 @@ class PhaseAnalysisPlotTests(unittest.TestCase):
             for axis in figure.axes[:3]:
                 np.testing.assert_allclose(axis.get_xlim(), (3, 29))
                 np.testing.assert_allclose(axis.get_ylim(), (23, 2))
-                np.testing.assert_allclose(axis.get_zlim(), (-52, 52))
+                np.testing.assert_allclose(axis.get_zlim(), limits)
                 self.assertEqual(axis.get_zlabel(), "Wavefront OPD (nm)")
                 self.assertEqual(len(axis.collections), 1)
-                self.assertEqual(axis.collections[0].norm.vmin, -52)
-                self.assertEqual(axis.collections[0].norm.vmax, 52)
+                self.assertEqual(axis.collections[0].norm.vmin, limits[0])
+                self.assertEqual(axis.collections[0].norm.vmax, limits[1])
                 self.assertEqual(axis.collections[0].cmap.name, "viridis")
                 self.assertEqual(axis.collections[0].get_alpha(), 1.0)
             self.assertEqual(figure.axes[3]._colorbar.mappable.cmap.name, "viridis")

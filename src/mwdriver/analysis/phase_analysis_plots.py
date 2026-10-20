@@ -8,6 +8,8 @@ from matplotlib.text import Text
 from matplotlib.tri import Triangulation
 import numpy as np
 
+from mwdriver.domain.wavefront_surface import wavefront_surface_limits
+
 
 PLOT_DPI = 100
 PLOT_FIGSIZE = (14.4, 10.8)
@@ -47,11 +49,8 @@ def render_wavefront_surfaces(tilt_removed_nm, defocus_removed_nm, residual_nm):
     ]
     if any(surface.ndim != 2 or surface.shape != surfaces[0].shape for surface in surfaces):
         raise ValueError("Wavefront surfaces must be matching 2D arrays.")
-    values = np.concatenate([surface.compressed() for surface in surfaces])
-    if values.size == 0:
-        raise ValueError("Wavefront surfaces contain no valid data.")
-    scale = max(float(np.max(np.abs(values))), 1e-9)
-    normalization = Normalize(-scale, scale)
+    limits = wavefront_surface_limits(surfaces[0])
+    normalization = Normalize(*limits)
     height, width = surfaces[0].shape
     if min(height, width) < 2:
         raise ValueError("Wavefront surfaces must have at least two rows and columns.")
@@ -107,7 +106,7 @@ def render_wavefront_surfaces(tilt_removed_nm, defocus_removed_nm, residual_nm):
         axis.set_zlabel("Wavefront OPD (nm)", labelpad=10)
         axis.set_xlim(first_column, last_column)
         axis.set_ylim(last_row, first_row)
-        axis.set_zlim(-scale, scale)
+        axis.set_zlim(*limits)
         axis.set_box_aspect((
             valid_width / max(valid_height, valid_width),
             valid_height / max(valid_height, valid_width),

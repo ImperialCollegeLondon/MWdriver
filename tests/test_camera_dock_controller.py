@@ -2,6 +2,7 @@ import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -29,6 +30,38 @@ class FakeTimer:
 
 
 class CameraDockControllerTests(unittest.TestCase):
+    def test_interpolation_control_stays_hidden_for_all_layers(self):
+        analysis_image = SimpleNamespace(_type_string="image")
+        analysis_plot = SimpleNamespace(_type_string="image", rgb=True)
+        surface = SimpleNamespace(_type_string="surface")
+        preview = SimpleNamespace(_type_string="image")
+        interpolation_label = SimpleNamespace(text=lambda: "interpolation:")
+        controls = SimpleNamespace(findChildren=lambda _kind: [interpolation_label])
+        controller = CameraDockController()
+        selection = SimpleNamespace(active=None)
+        controller.viewer = SimpleNamespace(
+            layers=SimpleNamespace(selection=selection),
+            window=SimpleNamespace(_qt_viewer=SimpleNamespace(controls=controls)),
+        )
+        controller.phase_analysis_layer_records = [
+            {"layer": layer} for layer in (analysis_image, analysis_plot, surface)
+        ]
+        controller.set_control_row_visible = MagicMock()
+        controller.place_camera_adjust_controls_in_layer_controls = MagicMock()
+        controller.place_camera_status_controls_in_layer_controls = MagicMock()
+        controller.place_phase_analysis_controls_in_layer_controls = MagicMock()
+
+        for layer, visible in (
+            (analysis_image, False), (analysis_plot, False),
+            (surface, False), (preview, False), (analysis_image, False),
+        ):
+            with self.subTest(layer=layer, visible=visible):
+                selection.active = layer
+                controller.simplify_layer_controls()
+                controller.set_control_row_visible.assert_called_with(
+                    interpolation_label, visible
+                )
+
     def test_widget_insertion_is_idempotent_and_refreshes_content(self):
         controller = CameraDockController()
         widget = SimpleNamespace(visible=False)

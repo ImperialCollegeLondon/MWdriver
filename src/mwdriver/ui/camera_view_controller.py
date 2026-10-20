@@ -286,6 +286,7 @@ class CameraViewController:
                     result_data,
                     name=layer_name,
                     rgb=True,
+                    interpolation2d="spline36",
                 )
             else:
                 analysis_layer = self.viewer.add_image(

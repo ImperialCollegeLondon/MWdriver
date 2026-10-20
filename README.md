@@ -243,6 +243,14 @@ Offline analysis needs only NumPy and Matplotlib.
    reconstructed phase and aberration results. The six captured phase images
    are available in the separate capture-stack layer, not in the analysis review
    selector.
+   RGB analysis plots use `spline36` interpolation automatically, with the
+   interpolation control hidden. Scalar phase and aberration image layers keep
+   their existing interpolation defaults.
+   The three saved 3D wavefront panels share vertical and colour limits from
+   the 0.1st and 99.1st percentiles of the tilt-removed wavefront in nm OPD.
+   Interactive 3D surfaces use the same limits for colour and the same span
+   for height scaling, while retaining their original mesh heights. Masked
+   and non-finite values are excluded from the percentile calculation.
    Choose the phase-step method in the Camera Status controls. The default
    remains the 90-degree six-frame method; the alternative is the 60-degree
    six-bucket method. Recalibrate separately after switching methods because

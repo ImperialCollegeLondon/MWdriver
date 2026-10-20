@@ -12,6 +12,41 @@ from mwdriver.domain.wavefront_surface import SURFACE_RESULTS, build_wavefront_s
 
 
 class WavefrontSurfaceTests(unittest.TestCase):
+    def test_only_rgb_analysis_plots_default_to_spline36(self):
+        from napari.components import ViewerModel
+        from mwdriver.ui.camera_view_controller import CameraViewController
+
+        controller = CameraViewController()
+        controller.viewer = ViewerModel()
+        controller.phase_analysis_layer = None
+        controller.phase_analysis_layer_records = []
+        controller.phase_analysis_source_stack_name = "test"
+        controller.phase_analysis_results = {
+            "tilt_removed": np.arange(36, dtype=float).reshape(6, 6),
+            "zernike_before_plot_rgb": np.zeros((12, 16, 3), dtype=np.uint8),
+            "zernike_after_plot_rgb": np.ones((12, 16, 3), dtype=np.uint8),
+        }
+        controller.apply_layer_visibility_plan = MagicMock()
+        selected = ["tilt_removed"]
+        controller.phase_analysis_selector = SimpleNamespace(
+            currentData=lambda: selected[0], currentText=lambda: selected[0]
+        )
+        controller._show_selected_phase_analysis_result()
+        scalar_layer = controller.phase_analysis_layer
+        self.assertEqual(scalar_layer.interpolation2d, "nearest")
+        selected[0] = "zernike_before_plot_rgb"
+        controller._show_selected_phase_analysis_result()
+        rgb_layer = controller.phase_analysis_layer
+        self.assertEqual(rgb_layer.interpolation2d, "spline36")
+        selected[0] = "zernike_after_plot_rgb"
+        controller._show_selected_phase_analysis_result()
+        self.assertIs(controller.phase_analysis_layer, rgb_layer)
+        self.assertEqual(rgb_layer.interpolation2d, "spline36")
+        selected[0] = "tilt_removed"
+        controller._show_selected_phase_analysis_result()
+        self.assertIs(controller.phase_analysis_layer, scalar_layer)
+        self.assertEqual(scalar_layer.interpolation2d, "nearest")
+
     def test_deletion_prepares_2d_and_current_gl_context(self):
         from mwdriver.ui.camera_view_controller import CameraViewController
 
@@ -188,11 +223,32 @@ class WavefrontSurfaceTests(unittest.TestCase):
             vertices, faces, heights = mesh["data"]
             np.testing.assert_allclose(heights, (vertices[:, 1] + vertices[:, 2]) * factor)
             self.assertTrue(np.all(np.isfinite(vertices)))
-            np.testing.assert_allclose(mesh["contrast_limits"], (-24, 24))
+            limits = np.percentile(values[np.isfinite(values)], [0.1, 99.1])
+            np.testing.assert_allclose(mesh["contrast_limits"], limits)
+            self.assertAlmostEqual(mesh["scale"][0], 11.0 / np.ptp(limits))
             for triangle in vertices[faces]:
                 rows = triangle[:, 1].astype(int)
                 columns = triangle[:, 2].astype(int)
                 self.assertTrue(np.all(valid[rows.min():rows.max()+1, columns.min():columns.max()+1]))
+
+    def test_surface_limits_ignore_other_stages_and_preserve_heights(self):
+        tilt_removed_nm = np.arange(10000, dtype=float).reshape(100, 100)
+        tilt_removed_nm[0, 0] = np.nan
+        tilt_removed_nm[-1, -1] = 1e12
+        results = {
+            "tilt_removed": tilt_removed_nm * 2.0 * np.pi / 600.0,
+            "wavefront_aberration_nm": np.full((100, 100), -1e14),
+            "residual_nm": np.full((100, 100), 1e15),
+            "wavelength_nm": 600.0,
+        }
+        limits = np.percentile(tilt_removed_nm[np.isfinite(tilt_removed_nm)], [0.1, 99.1])
+        for key in SURFACE_RESULTS:
+            with self.subTest(key=key):
+                mesh = build_wavefront_surface(results, key)
+                np.testing.assert_allclose(mesh["contrast_limits"], limits)
+                self.assertAlmostEqual(mesh["scale"][0], 99.0 / np.ptp(limits))
+                vertices, _, heights = mesh["data"]
+                np.testing.assert_array_equal(vertices[:, 0], heights)
 
     def test_napari_accepts_surface_data(self):
         from napari.layers import Surface

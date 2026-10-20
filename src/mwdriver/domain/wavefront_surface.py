@@ -10,6 +10,17 @@ SURFACE_RESULTS = {
 }
 
 
+def wavefront_surface_limits(tilt_removed_nm):
+    values = np.ma.masked_invalid(np.ma.asarray(tilt_removed_nm, dtype=float)).compressed()
+    if values.size == 0:
+        raise ValueError("Tilt-removed wavefront contains no valid data.")
+    lower, upper = np.percentile(values, [0.1, 99.1])
+    if lower == upper:
+        lower -= 1e-9
+        upper += 1e-9
+    return float(lower), float(upper)
+
+
 def build_wavefront_surface(results, selected_key):
     wavelength = float(results.get("wavelength_nm", 632.8))
     factors = (wavelength / (2.0 * np.pi), 1.0, 2.0)
@@ -51,11 +62,10 @@ def build_wavefront_surface(results, selected_key):
     used, faces = np.unique(triangles, return_inverse=True)
     heights = surface.filled(np.nan)[np.ix_(rows, columns)].ravel()[used]
     vertices = np.column_stack((heights, grid_y.ravel()[used], grid_x.ravel()[used]))
-    values = np.concatenate([item.compressed() for item in surfaces.values()])
-    limit = max(float(np.max(np.abs(values))), 1e-9)
+    limits = wavefront_surface_limits(surfaces.get("surface_tilt_removed", surface))
     extent = max(float(np.ptp(valid_x)), float(np.ptp(valid_y)), 1.0)
     return {
         "data": (vertices, faces.reshape(-1, 3), heights),
-        "contrast_limits": (-limit, limit),
-        "scale": (extent / (2.0 * limit), 1.0, 1.0),
+        "contrast_limits": limits,
+        "scale": (extent / max(limits[1] - limits[0], 1e-9), 1.0, 1.0),
     }
