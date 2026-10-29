@@ -12,6 +12,7 @@ from mwdriver.domain.recalibration import (
     RecalibrationConfig,
     build_even_trigger_positions_ms,
     compute_coarse_refined_positions_ms,
+    compute_iterative_refined_positions_ms,
     enforce_minimum_trigger_spacing_ms,
     decide_incomplete_capture_action,
     decide_verification_capture_action,
@@ -82,6 +83,35 @@ class RecalibrationValidationTests(unittest.TestCase):
         config = RecalibrationConfig(max_refinement_rounds=5)
         self.assertEqual(config.max_verification_captures, 6)
         self.assertEqual(DEFAULT_RECALIBRATION_CONFIG.frame_count, 6)
+        self.assertEqual(DEFAULT_RECALIBRATION_CONFIG.max_verification_captures, 6)
+
+    def test_refinement_uses_half_adjustment_for_small_and_large_errors(self):
+        for phase_step, expected in (
+            (80, [100, 185, 270, 355, 440, 525]),
+            (88, [100, 181, 262, 343, 424, 505]),
+        ):
+            with self.subTest(phase_step=phase_step):
+                result = compute_iterative_refined_positions_ms(
+                    current_positions_ms=[100, 180, 260, 340, 420, 500],
+                    measured_phase_deg=[index * phase_step for index in range(6)],
+                    target_phase_deg=[0, 90, 180, 270, 360, 450],
+                    config=DEFAULT_RECALIBRATION_CONFIG,
+                    camera_required_spacing_ms=25,
+                )
+                self.assertEqual(result, expected)
+
+    def test_default_verification_limit_waits_for_six_captures(self):
+        for capture_count in range(1, 7):
+            with self.subTest(capture_count=capture_count):
+                self.assertEqual(
+                    decide_verification_capture_action(
+                        verification_passed=False,
+                        has_pending_pass_candidate=False,
+                        verification_capture_count=capture_count,
+                        config=DEFAULT_RECALIBRATION_CONFIG,
+                    ),
+                    "refine" if capture_count < 6 else "evaluate_best",
+                )
 
     def test_even_trigger_positions_respect_guard_bounds(self):
         self.assertEqual(
@@ -229,6 +259,24 @@ class RecalibrationValidationTests(unittest.TestCase):
                 [0, 1, -2, 3, -4, float("nan")], DEFAULT_RECALIBRATION_CONFIG
             )
         )
+
+    def test_coarse_solver_seeds_refinement_when_span_is_below_target(self):
+        positions = [100, 190, 280, 369, 459, 549]
+        measured_phase = [0, 57.35, 120.30, 219.80, 313.75, 420.58]
+
+        result = compute_coarse_refined_positions_ms(
+            coarse_positions_ms=positions,
+            measured_phase_deg=measured_phase,
+            target_phase_deg=[0, 90, 180, 270, 360, 450],
+            config=DEFAULT_RECALIBRATION_CONFIG,
+            camera_required_spacing_ms=25,
+        )
+
+        self.assertEqual(len(result), 6)
+        self.assertNotEqual(result, positions)
+        self.assertEqual(result[-1], 549)
+        self.assertEqual(self.validate_positions(result), result)
+        self.assertTrue(np.all(np.diff(result) >= 25))
 
     def test_coarse_solver_accepts_list_returned_by_validation(self):
         result = compute_coarse_refined_positions_ms(

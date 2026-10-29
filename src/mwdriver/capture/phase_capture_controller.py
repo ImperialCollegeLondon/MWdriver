@@ -30,7 +30,6 @@ from mwdriver.domain.recalibration import (
     decide_incomplete_capture_action,
     decide_verification_capture_action,
     is_strict_recalibration_pass,
-    select_best_recalibration_candidate,
 )
 
 
@@ -659,19 +658,16 @@ class PhaseCaptureController:
             self.recalibration_incomplete_verification_retries += 1
             retry_verification_capture = True
         elif incomplete_capture_decision.action == "keep_best":
-            best_candidate = select_best_recalibration_candidate(
-                self.recalibration_candidates
-            )
             self.finalize_recalibration_candidate(
-                selected_candidate=best_candidate,
+                selected_candidate=self.recalibration_candidates[-1],
                 fallback_used=True,
             )
             self.status_label.setText(
-                "Status: Verification capture failed; kept the best "
+                "Status: Verification capture failed; kept the latest complete "
                 "previously measured session"
             )
             self.phase_label.setText(
-                "Phase Capture: Kept best previous verification session"
+                "Phase Capture: Kept latest complete verification session"
             )
         elif incomplete_capture_decision.action == "abort":
             self.abort_recalibration(
@@ -1013,13 +1009,8 @@ class PhaseCaptureController:
             )
 
             if verification_action == "confirm":
-                previous_pass_candidate = self.recalibration_pending_pass_candidate
-
-                selected_candidate = select_best_recalibration_candidate(
-                    [previous_pass_candidate, candidate]
-                )
                 self.finalize_recalibration_candidate(
-                    selected_candidate=selected_candidate,
+                    selected_candidate=candidate,
                     fallback_used=False,
                 )
 
@@ -1028,24 +1019,21 @@ class PhaseCaptureController:
                 )
                 self.status_label.setText(
                     "Status: Recalibration confirmed by two passing "
-                    "verification captures; kept the better session"
+                    "verification captures; kept the final session"
                 )
                 return
 
             if verification_action == "keep_best":
-                best_candidate = select_best_recalibration_candidate(
-                    self.recalibration_candidates
-                )
                 self.finalize_recalibration_candidate(
-                    selected_candidate=best_candidate,
+                    selected_candidate=candidate,
                     fallback_used=True,
                 )
                 self.phase_label.setText(
-                    "Phase Capture: Best candidate kept without confirmation"
+                    "Phase Capture: Final candidate kept without confirmation"
                 )
                 self.status_label.setText(
                     "Status: Verification limit reached before a second "
-                    "confirmation; kept the best candidate"
+                    "confirmation; kept the final candidate"
                 )
                 return
 
@@ -1064,29 +1052,25 @@ class PhaseCaptureController:
             self.recalibration_pending_pass_candidate = None
 
             if verification_action == "evaluate_best":
-                best_candidate = select_best_recalibration_candidate(
-                    self.recalibration_candidates
-                )
-
-                if self.should_auto_restart_recalibration(best_candidate):
+                if self.should_auto_restart_recalibration(candidate):
                     restarted = self.restart_recalibration_after_failed_verification(
-                        best_candidate
+                        candidate
                     )
                     if restarted:
                         return
 
                 self.finalize_recalibration_candidate(
-                    selected_candidate=best_candidate,
+                    selected_candidate=candidate,
                     fallback_used=True,
                 )
 
                 self.phase_label.setText(
-                    "Phase Capture: Recalibration completed with best candidate"
+                    "Phase Capture: Recalibration completed with final candidate"
                 )
                 self.status_label.setText(
                     "Status: Recalibration completed after "
                     f"{RECALIBRATION_CONFIG.max_verification_captures} verification captures; "
-                    f"kept best session with score {best_candidate['score']}"
+                    f"kept final session with score {candidate['score']}"
                 )
                 return
 

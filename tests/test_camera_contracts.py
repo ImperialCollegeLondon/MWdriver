@@ -1522,6 +1522,49 @@ class CameraContractTests(unittest.TestCase):
             for old, new in zip(current_positions, refined)
         ))
 
+    def test_short_coarse_span_queues_verification_capture(self):
+        queued = []
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            check_path = Path(temporary_directory) / "measured_phase_check.json"
+            check_path.write_text(
+                json.dumps({"measured_phase_deg": [0, 57.35, 120.30, 219.80, 313.75, 420.58]}),
+                encoding="utf-8",
+            )
+            viewer = SimpleNamespace(
+                pending_phase_capture_layer=None,
+                recalibration_active=True,
+                recalibration_stage="coarse_capture",
+                recalibration_coarse_positions_ms=[100, 190, 280, 369, 459, 549],
+                cam=SimpleNamespace(
+                    get_recommended_trigger_spacing_ms=lambda **kwargs: 25,
+                ),
+                exposure_s=0.01,
+                get_recalibration_target_phase_deg=lambda: [0, 90, 180, 270, 360, 450],
+                phase_label=LabelStub(),
+                status_label=LabelStub(),
+                save_recalibrated_trigger_positions=lambda **kwargs: None,
+                queue_or_defer_recalibration_phase_capture=lambda positions, status: queued.append((positions, status)),
+                abort_recalibration=lambda status: self.fail(status),
+            )
+            viewer.compute_recalibrated_trigger_positions_ms = MethodType(
+                camera.CameraRecalibrationController.compute_recalibrated_trigger_positions_ms,
+                viewer,
+            )
+
+            self.load_save_result_handler()(viewer, PhaseSaveResult(
+                save_success=True,
+                session_dir=temporary_directory,
+                raw_stack_path=None,
+                metadata_path=None,
+                phase_check_json_path=str(check_path),
+            ))
+
+        self.assertTrue(viewer.recalibration_active)
+        self.assertEqual(viewer.recalibration_stage, "verification_capture")
+        self.assertEqual(len(queued), 1)
+        self.assertEqual(queued[0][0], viewer.recalibration_current_positions_ms)
+        self.assertEqual(queued[0][0][-1], 549)
+
     def test_nonpassing_verification_queues_next_refined_capture(self):
         next_positions = [100, 190, 280, 370, 460, 550]
         candidate = {
@@ -1580,7 +1623,56 @@ class CameraContractTests(unittest.TestCase):
             [0, 98, 192, 290, 390, 490],
         )
         self.assertEqual(queued[0][0], next_positions)
-        self.assertIn("refine 1/3", queued[0][1])
+        self.assertIn("refine 1/5", queued[0][1])
+
+    def test_final_verification_is_selected_even_when_earlier_capture_is_better(self):
+        cases = [(True, True, 1), (True, False, 5), (False, False, 5)]
+        for passed, pending_confirmation, capture_count in cases:
+            with self.subTest(passed=passed, pending=pending_confirmation):
+                previous = {"score": (0, 0.0), "session_dir": "earlier"}
+                candidate = {
+                    "phase_error_deg": [0, 1, 2, 3, 4, 5] if passed else [0, 8, 12, 20, 30, 40],
+                    "max_abs_error": 5.0 if passed else 40.0,
+                    "count_error_over_5": 0 if passed else 5,
+                    "count_error_over_10": 0 if passed else 4,
+                    "score": (0, 5.0) if passed else (4, 40.0),
+                    "session_dir": "final",
+                }
+                finalized = []
+                restart_checks = []
+                with tempfile.TemporaryDirectory() as temporary_directory:
+                    check_path = Path(temporary_directory) / "measured_phase_check.json"
+                    check_path.write_text(
+                        json.dumps({"measured_phase_deg": [0, 60, 120, 180, 240, 300]}),
+                        encoding="utf-8",
+                    )
+                    viewer = SimpleNamespace(
+                        pending_phase_capture_layer=None,
+                        recalibration_active=True,
+                        recalibration_stage="verification_capture",
+                        recalibration_candidates=[previous],
+                        recalibration_verification_capture_count=capture_count,
+                        recalibration_pending_pass_candidate=previous if pending_confirmation else None,
+                        phase_label=LabelStub(),
+                        status_label=LabelStub(),
+                        build_recalibration_candidate=lambda **kwargs: candidate,
+                        should_auto_restart_recalibration=lambda selected: restart_checks.append(selected) or False,
+                        finalize_recalibration_candidate=lambda **kwargs: finalized.append(kwargs),
+                    )
+
+                    self.load_save_result_handler()(viewer, PhaseSaveResult(
+                        save_success=True,
+                        session_dir=temporary_directory,
+                        raw_stack_path=None,
+                        metadata_path=None,
+                        phase_check_json_path=str(check_path),
+                    ))
+
+                self.assertEqual(len(finalized), 1)
+                self.assertIs(finalized[0]["selected_candidate"], candidate)
+                self.assertIn("final", viewer.status_label.value)
+                if not passed:
+                    self.assertEqual(restart_checks, [candidate])
 
     def test_nonpassing_verification_terminates_at_capture_limit(self):
         candidate = {
@@ -1606,7 +1698,7 @@ class CameraContractTests(unittest.TestCase):
                 recalibration_stage="verification_capture",
                 recalibration_candidates=[candidate],
                 recalibration_incomplete_verification_retries=0,
-                recalibration_verification_capture_count=3,
+                recalibration_verification_capture_count=5,
                 recalibration_pending_pass_candidate=None,
                 recalibration_current_positions_ms=[100, 190, 280, 370, 460, 550],
                 recalibration_target_positions_ms=[100, 190, 280, 370, 460, 550],
@@ -1630,7 +1722,7 @@ class CameraContractTests(unittest.TestCase):
 
         self.assertEqual(len(finalized), 1)
         self.assertTrue(finalized[0]["fallback_used"])
-        self.assertIn("after 4 verification captures", viewer.status_label.value)
+        self.assertIn("after 6 verification captures", viewer.status_label.value)
 
 
 if __name__ == "__main__":

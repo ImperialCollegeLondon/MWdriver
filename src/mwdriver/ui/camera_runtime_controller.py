@@ -223,9 +223,12 @@ class CameraRuntimeController:
             self.phase_capture_active
             and self.current_camera_mode == "external"
         ):
+            preview_calibration_frame = self.recalibration_active
             self.handle_triggered_phase_frame(raw_frame, frame_meta=frame_meta)
 
-            # Do not let GUI redraw work delay closely spaced triggered frames.
+            if preview_calibration_frame:
+                self.layer.data = display_frame
+
             return
 
         self.layer.data = display_frame

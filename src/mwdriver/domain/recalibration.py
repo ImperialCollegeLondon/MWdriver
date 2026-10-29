@@ -15,15 +15,14 @@ class RecalibrationConfig:
     edge_guard_ms: float = 100.0
     error_tolerance_deg: float = 5.0
     retry_error_limit_deg: float = 10.0
-    max_refinement_rounds: int = 3
+    max_refinement_rounds: int = 5
     max_incomplete_verification_retries: int = 2
     minimum_error_over_5_points: int = 2
     minimum_error_over_5_only_points: int = 3
     max_auto_restarts: int = 1
     max_time_step_ms: float = 20.0
-    time_update_damping: float = 0.7
+    time_update_damping: float = 0.5
     large_error_time_step_ms: float = 40.0
-    large_error_damping: float = 1.0
     minimum_coarse_span_deg: float = 220.0
     minimum_coarse_total_abs_step_deg: float = 220.0
     minimum_coarse_max_step_deg: float = 35.0
@@ -186,12 +185,6 @@ def compute_coarse_refined_positions_ms(
         if measured[index] <= measured[index - 1]:
             measured[index] = measured[index - 1] + 1e-3
 
-    if measured[-1] < float(target_phase[-1]):
-        raise ValueError(
-            "Coarse calibration span is too short: "
-            f"last measured phase {measured[-1]:.2f} deg"
-        )
-
     upper_guarded_bound = config.falling_edge_ms - 1 - config.edge_guard_ms
     target_positions = np.interp(target_phase, measured, coarse_positions)
     target_positions = np.clip(
@@ -268,13 +261,11 @@ def compute_iterative_refined_positions_ms(
 
     max_abs_error = float(np.max(np.abs(measured - target_phase)))
     if max_abs_error > config.retry_error_limit_deg:
-        damping = config.large_error_damping
         max_time_step_ms = config.large_error_time_step_ms
     else:
-        damping = config.time_update_damping
         max_time_step_ms = config.max_time_step_ms
 
-    updated = current_positions + damping * (desired_positions - current_positions)
+    updated = current_positions + config.time_update_damping * (desired_positions - current_positions)
     updated[0] = current_positions[0]
     updated = current_positions + np.clip(
         updated - current_positions,
