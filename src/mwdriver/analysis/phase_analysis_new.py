@@ -31,6 +31,7 @@ from mwdriver.analysis.phase_analysis_plots import (
 )
 from mwdriver.analysis.phase_analysis_viewer import show_analysis_result_viewer
 from mwdriver.paths import RESULTS_DIR
+from mwdriver.domain.roi_geometry import build_inside_mask, enclosing_circle_vertices
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -262,6 +263,16 @@ def analyze_capture(
             "The current ROI contains no pixels above mean PSI signal magnitude."
         )
 
+    automatic_pupil_vertices = None
+    if roi_mask_path is None and pupil_vertices is None:
+        automatic_pupil_vertices = enclosing_circle_vertices(valid_mask)
+        pupil_vertices = automatic_pupil_vertices
+        roi_mask, _, _ = build_inside_mask(
+            pupil_vertices, "ellipse", sizey, sizex, 1,
+        )
+        valid_mask = valid_mask & roi_mask
+        mask = ~valid_mask
+
     roi_valid_y, roi_valid_x = np.nonzero(valid_mask)
     roi_centroid_y = float(np.mean(roi_valid_y))
     roi_centroid_x = float(np.mean(roi_valid_x))
@@ -436,6 +447,8 @@ def analyze_capture(
             "wavefront_surfaces_plot_rgb": wavefront_surfaces_plot_rgb,
             "residual_nm": residual_surface_nm.filled(np.nan).astype(np.float32),
         }
+        if automatic_pupil_vertices is not None:
+            output_arrays["automatic_roi_vertices"] = automatic_pupil_vertices
         export_path = write_analysis_export(export_path, output_arrays)
         print("Saved phase analysis results:")
         print(export_path)

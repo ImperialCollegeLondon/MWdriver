@@ -10,6 +10,7 @@ import numpy as np
 from mwdriver.paths import RESULTS_DIR
 from qtpy.QtCore import QThread, QTimer
 
+from mwdriver.analysis.recalibration_plots import save_recalibration_iterations_plot
 from mwdriver.capture.phase_capture_frame_filter import (
     decide_framestamp_phase_slot,
     decide_native_phase_frame,
@@ -24,7 +25,7 @@ from mwdriver.capture.phase_capture_timestamps import (
 )
 from mwdriver.capture.phase_capture_storage import PhaseSaveResult
 from mwdriver.capture.phase_capture_worker import PhaseSaveWorker
-from mwdriver.domain.phase_psi import get_algorithm as get_psi_algorithm
+from mwdriver.domain.phase_psi import DEFAULT_ALGORITHM, get_algorithm as get_psi_algorithm
 from mwdriver.domain.recalibration import (
     DEFAULT_RECALIBRATION_CONFIG,
     decide_incomplete_capture_action,
@@ -829,6 +830,7 @@ class PhaseCaptureController:
             roi_mask=roi_mask_snapshot,
             save_dir=SAVE_DIR,
             session_prefix=session_prefix,
+            diagnostic_plots=getattr(self, "diagnostic_plots_enabled", False),
             trigger_positions_ms=self.last_capture_trigger_positions_ms,
             psi_algorithm_id=self.last_capture_algorithm_id,
             voltage_mapper=triangle_wave_falling_edge_voltage,
@@ -911,6 +913,32 @@ class PhaseCaptureController:
                 f"Status: Recalibration failed reading phase check: {error}"
             )
             return
+
+        try:
+            history = getattr(self, "recalibration_plot_history", [])
+            attempt = getattr(self, "recalibration_auto_restart_count", 0) + 1
+            if self.recalibration_stage == "coarse_capture":
+                label = f"Attempt {attempt}: coarse"
+                scan_positions = self.recalibration_coarse_positions_ms
+            else:
+                iteration = self.recalibration_verification_capture_count + 1
+                label = f"Attempt {attempt}: verification {iteration}"
+                scan_positions = getattr(self, "recalibration_current_positions_ms", None)
+            history.append({
+                "label": label,
+                "expected_phase_deg": phase_check.get(
+                    "expected_phase_deg",
+                    get_psi_algorithm(getattr(self, "selected_psi_algorithm_id", DEFAULT_ALGORITHM))["expected_phase_deg"],
+                ),
+                "measured_phase_deg": measured_phase_deg.tolist(),
+                "trigger_positions_ms": list(scan_positions) if scan_positions is not None else [],
+            })
+            self.recalibration_plot_history = history
+            if getattr(self, "diagnostic_plots_enabled", False):
+                plot_path = save_recalibration_iterations_plot(history, session_dir)
+                print("Saved recalibration iteration plot:", plot_path)
+        except Exception as error:
+            print("Recalibration iteration plot warning:", error)
 
         if self.recalibration_stage == "coarse_capture":
             try:

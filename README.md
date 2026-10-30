@@ -195,12 +195,12 @@ Offline analysis needs only NumPy and Matplotlib.
    MWdriver controls appear in a separate, scrollable **MWdriver Controls**
    dock on the right; Napari's layer list remains separate on the left.
 
-   Use **Camera Tools > Start Stream** to allow live preview streaming and
+   Use **Camera > Start Stream** to allow live preview streaming and
    **Stop Stream** to disable it. The camera reads and displays live frames only
    while the **Camera Preview** layer is visible and streaming is allowed.
-   During phase capture and recalibration, preview updates are suspended while
-   the controller collects the six externally triggered frames; recalibration
-   keeps preview streaming disabled between capture sets.
+   During normal phase capture, preview redraws are suspended while the
+   controller collects six externally triggered frames. Recalibration displays
+   each acquired frame, but keeps live streaming disabled between capture sets.
 
 3. Set the camera exposure and ROI, then choose **Start Phase Capture**.
    The controller temporarily uses external triggering, saves six frames under
@@ -208,21 +208,46 @@ Offline analysis needs only NumPy and Matplotlib.
    Windows' actual Documents location is used, including redirected or OneDrive
    Documents folders. Calibration captures, including verification runs, use
    `calibrate_YYYYMMDD_HHMMSS`.
-   On calibration completion, only the selected verification capture is retained;
+   On calibration completion, the final completed verification capture is retained,
+   rather than an earlier best-scoring capture;
    the coarse capture and rejected verification captures are removed. If
    calibration aborts before selecting a verification capture, diagnostic data
    remains available.
+   Enable **Analysis > Extra Diagnostic Plots** to save the optional plots below.
+   This checkable session setting is off by default and applies to subsequent
+   captures. It controls combined calibration plots, Fourier spectrum/mask plots,
+   field amplitude/relative-phase maps, and phase-versus-voltage plots. The
+   standard measured-versus-expected plot and phase-check JSON are always saved.
+   Disabling the option does not delete existing diagnostic files.
+   With diagnostics enabled during recalibration, `recalibration_iterations.png` is updated in each capture
+   folder with the coarse and all verification curves on shared measured-versus-
+   expected phase axes. Curves are labelled by attempt and verification number,
+   including automatic restarts. The final retained calibration folder contains
+   the combined plot even though earlier capture folders are removed.
+   A companion `recalibration_iteration_errors.png` shows measured minus expected
+   phase for the same iterations, with matching curve colours and a zero-error
+   reference. Both plots reference measured phases to the first frame.
+   `recalibration_iterations_time_vs_phase.png` overlays all calibration scans
+   with measured phase on the horizontal axis and requested trigger time in
+   milliseconds from the falling-edge start on the vertical axis. These are the
+   requested timing positions, not camera timestamps or estimated voltages.
    Saved ROI files and `phase_trigger_positions.json` also live in
    `Documents/MWDriver`. The directory is created when results are first saved.
    Sessions include a `*_raw_stack.npy`, PNG frames, and ROI/session metadata.
    Each completed stack is also added to Napari as its own `time, y, x` image
    layer, with a time slider for stepping through the six frames. Select a
-   captured layer to inspect it; use **Camera Tools > Return to Camera Preview**
+   captured layer to inspect it; use **Camera > Return to Camera Preview**
    to resume the live preview. Captured layers remain available for the current
    Napari session while the original files continue to be saved to disk.
    To analyse a particular saved stack, select its layer and choose
-   **Camera Tools > Analyze Selected Stack**. **Analyze Latest Capture** remains
+   **Analysis > Analyze Selected Stack**. **Analyze Latest Capture** remains
    available when you want the most recently saved phase capture instead.
+   Use **Analysis > Reload Stack...** to choose an existing acquired dataset
+   directory. It loads the directory's single `*_raw_stack.npy` with capture
+   metadata and, if present, `phase_analysis_results.npz` without recalculation.
+   Saved analysis opens for review while the raw stack remains in the layer list.
+   Without saved analysis, the raw stack is shown ready for analysis. Current
+   camera settings and ROI are preserved.
    To reopen a dataset from an earlier run, choose **File > Reload Dataset...**
    and select its `*_raw_stack.npy` file. The six-frame stack and adjacent capture
    metadata are restored as a new layer; choose **Analyze Selected Stack** to
@@ -255,6 +280,14 @@ Offline analysis needs only NumPy and Matplotlib.
    remains the 90-degree six-frame method; the alternative is the 60-degree
    six-bucket method. Recalibrate separately after switching methods because
    each method has its own target phase positions and saved trigger timings.
+   Coarse recalibration starts at 100 ms for both methods. The 90-degree method
+   samples at `100, 190, 280, 369, 459, 549 ms`; the 60-degree method uses
+   75% of that spacing: `100, 167, 235, 302, 369, 437 ms`.
+   Verification uses 50% of each calculated timing adjustment, with the existing
+   per-step timing limits and camera-safe spacing. Up to six verification
+   captures are allowed before the restart decision, with at most one automatic
+   restart. Two consecutive captures within +/-5 degrees confirm calibration;
+   at the limit, the final completed capture is retained even if it is not a pass.
    Captures record the selected method in their metadata, which analysis uses
    automatically. Older captures without method metadata are treated as 90-degree.
 4. Inspect a saved session manually or run full analysis:
@@ -274,7 +307,41 @@ Offline analysis needs only NumPy and Matplotlib.
    python src\phase_analysis_new.py "$session" --no-viewer --export (Join-Path $session 'phase_analysis_results.npz')
    ```
 
-The checker writes `measured_phase_check.json` and
+The standalone phase checker enables diagnostic plots by default. Pass
+`--no-diagnostic-plots` to suppress the optional Fourier and field-map outputs.
+The application's **Analysis > Extra Diagnostic Plots** setting controls those
+outputs for automatic capture checks and is off by default.
+
+The checker extracts the complex field using the Fourier half-plane containing
+the detected sideband. Before the FFT, each frame has its mean ROI intensity
+subtracted inside the supplied ROI, and all pixels outside the ROI are set to
+zero. A full-frame ROI uses one mean. Without a supplied ROI, the checker creates
+a central 400-by-400-pixel ROI (smaller for small images) and applies exactly
+the same mean subtraction and outside-zeroing before the FFT.
+The same ROI also selects pixels for complex-field phase correlation after
+filtering. The hard ROI edge can introduce spectral leakage at the boundary.
+
+The Fourier filter retains the half-plane containing
+the detected sideband. The boundary passes through DC and is perpendicular to
+the DC-to-sideband direction. A Gaussian high-pass factor,
+`1 - exp(-r^2 / (2 * sigma^2))`, suppresses the zero order within that half-plane.
+Its sigma equals the carrier detector's DC exclusion radius in Fourier bins;
+there is no longer a narrow Gaussian passband centred on the sideband.
+The wider passband also admits more noise and any other structure on that side.
+
+With diagnostics enabled, the checker also saves `fourier_spectrum_and_mask.png`: frame 0's log Fourier
+spectrum, a zoom with filter-weight contours, the full actual filter weights,
+and the filtered spectrum. DC and the selected sideband are marked, with
+colourbars and the DC-suppression sigma in Fourier bins. The phase-check JSON
+records `filter_type` and `dc_suppression_sigma` in its Fourier diagnostics.
+
+The checker always writes `measured_phase_check.json`. With diagnostics enabled,
+it also writes `field_amplitude_maps.png` and `relative_phase_maps.png` into the session folder. These six-frame montages
+use shared colourbars: FFT sideband
+amplitude in camera intensity units, and wrapped phase relative to frame 0 in
+degrees (-180 to 180). Maps cover the full frame; phase in low-amplitude
+background regions is unreliable. The phase-map sign follows the measured
+phase curve. The existing annotated plot is saved as
 `measured_vs_expected_phase_annotated.png` into the session folder. Full analysis
 saves intermediate PNGs and `phase_analysis_result_images/` there. Review
 analysis constants for your optical setup, particularly `WAVELENGTH_NM`
@@ -317,6 +384,29 @@ The original six intensity frames remain in the raw stack and capture PNGs,
 not in the results NPZ. There is no separate manual-frame export workflow.
 
 ### Phase and Aberration Analysis
+
+Scalar phase images and interactive 3D surfaces show a colourbar in the upper
+right of the Napari canvas. It follows the selected layer's colormap and contrast
+limits. Wrapped and unwrapped phase images display waves; tilt-removed images,
+wavefront results and interactive surfaces display nanometres (OPD). A matching
+unit label appears at the lower right, and units are also included in the layer
+name. Stored wrapped, unwrapped and tilt-removed arrays remain in radians;
+conversion is display-only and uses the exported wavelength (632.8 nm for older
+archives without a wavelength). RGB charts keep their embedded scales; returning to
+camera preview hides analysis colourbars.
+
+When analysis runs without a defined ROI, it derives a circular pupil enclosing
+the largest 8-connected region of valid PSI-data pixels. Detached noise patches
+do not expand the circle, and valid pixels outside it are excluded from analysis.
+The circle is centred on the main region's centroid, with its
+radius reaching the furthest valid pixel plus a half-pixel margin. This is an
+enclosing circle, not a minimum-enclosing-circle optimisation. Zernike fitting
+uses this circle immediately, while invalid data pixels remain excluded.
+The export contains its raw-pixel `automatic_roi_vertices` and circular
+`roi_mask`. When background analysis completes, the camera viewer adds the circle
+to the editable ROI layer if no ROI has been drawn in the meantime. Subsequent
+analysis uses that ROI and pupil geometry. Use **ROI > Save ROI** to persist it;
+existing user-defined ROIs and archive-only reload behaviour are unchanged.
 
 The Zernike fit includes **J1-J11**, ending at primary spherical. The composition
 plot reports astigmatism, coma, trefoil and primary spherical after piston,

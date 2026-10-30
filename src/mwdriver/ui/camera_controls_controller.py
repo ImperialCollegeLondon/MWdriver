@@ -20,6 +20,9 @@ STANDARD_PHASE_EXPOSURE_MS = {60.0: 20.0, 90.0: 30.0}
 
 
 class CameraControlsController:
+    def set_diagnostic_plots_enabled(self, enabled):
+        self.diagnostic_plots_enabled = bool(enabled)
+
     def update_stream_menu_actions(self):
         if self.start_button is not None:
             self.start_button.setEnabled(not self.streaming_allowed)
@@ -99,7 +102,18 @@ class CameraControlsController:
         self.reload_analysis_action.triggered.connect(self.reload_analysis_from_file)
         file_menu.addAction(self.reload_analysis_action)
 
-        self.camera_menu = menubar.addMenu("Camera Tools")
+        self.camera_menu = menubar.addMenu("Camera")
+        self.analysis_menu = menubar.addMenu("Analysis")
+        self.reload_stack_action = QAction("Reload Stack...", qt_window)
+        self.reload_stack_action.setStatusTip("Load an acquired dataset directory and its saved analysis")
+        self.reload_stack_action.triggered.connect(self.reload_stack_from_directory)
+        self.analysis_menu.addAction(self.reload_stack_action)
+        self.analysis_menu.addSeparator()
+        self.diagnostic_plots_action = QAction("Extra Diagnostic Plots", qt_window)
+        self.diagnostic_plots_action.setCheckable(True)
+        self.diagnostic_plots_action.setChecked(getattr(self, "diagnostic_plots_enabled", False))
+        self.diagnostic_plots_action.setStatusTip("Save Fourier, field, calibration iteration and phase-versus-voltage diagnostic plots")
+        self.diagnostic_plots_action.toggled.connect(self.set_diagnostic_plots_enabled)
 
         self.start_button = QAction("Start Stream", qt_window)
         self.stop_button = QAction("Stop Stream", qt_window)
@@ -135,9 +149,11 @@ class CameraControlsController:
         self.camera_menu.addSeparator()
         self.camera_menu.addAction(self.start_phase_capture_button)
         self.camera_menu.addAction(self.recalibrate_button)
-        self.camera_menu.addAction(self.analyze_selected_phase_button)
-        self.camera_menu.addAction(self.analyze_latest_phase_button)
         self.camera_menu.addAction(self.camera_preview_button)
+        self.analysis_menu.addAction(self.analyze_selected_phase_button)
+        self.analysis_menu.addAction(self.analyze_latest_phase_button)
+        self.analysis_menu.addSeparator()
+        self.analysis_menu.addAction(self.diagnostic_plots_action)
 
         self.update_stream_menu_actions()
 

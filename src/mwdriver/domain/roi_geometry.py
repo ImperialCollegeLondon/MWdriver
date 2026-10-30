@@ -1,6 +1,26 @@
 """Pure conversion of Napari ROI vertices into raw-image masks and metadata."""
 
 import numpy as np
+from scipy import ndimage
+
+
+def enclosing_circle_vertices(valid_mask):
+    valid_mask = np.asarray(valid_mask, dtype=bool)
+    if valid_mask.ndim != 2 or not np.any(valid_mask):
+        raise ValueError("A nonempty 2D valid-data mask is required.")
+    components, _ = ndimage.label(valid_mask, structure=np.ones((3, 3), dtype=bool))
+    component_sizes = np.bincount(components.ravel())
+    component_sizes[0] = 0
+    main_region = components == np.argmax(component_sizes)
+    valid_y, valid_x = np.nonzero(main_region)
+    centre_y, centre_x = float(np.mean(valid_y)), float(np.mean(valid_x))
+    radius = float(np.max(np.hypot(valid_y - centre_y, valid_x - centre_x))) + 0.5
+    return np.asarray([
+        [centre_y - radius, centre_x - radius],
+        [centre_y - radius, centre_x + radius],
+        [centre_y + radius, centre_x + radius],
+        [centre_y + radius, centre_x - radius],
+    ])
 
 
 def build_inside_mask(roi_vertices, roi_type, image_height, image_width, display_downsample):

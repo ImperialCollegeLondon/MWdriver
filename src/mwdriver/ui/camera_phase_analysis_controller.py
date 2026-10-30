@@ -23,6 +23,68 @@ PHASE_ANALYSIS_SCRIPT = os.path.join(SCRIPT_DIR, "phase_analysis_new.py")
 
 
 class CameraPhaseAnalysisController:
+    def reload_stack_from_directory(self):
+        if self.phase_capture_active or self.recalibration_active:
+            self.status_label.setText("Status: Wait for capture or calibration to finish before loading a stack")
+            return
+        if getattr(self, "phase_analysis_process", None) is not None:
+            self.status_label.setText("Status: Wait for the current analysis to finish before loading a stack")
+            return
+        directory = QFileDialog.getExistingDirectory(
+            self.viewer.window._qt_window, "Reload Stack", SAVE_DIR,
+        )
+        if not directory:
+            return
+        session_dir = Path(directory).resolve()
+        stacks = sorted(session_dir.glob("*_raw_stack.npy"))
+        if len(stacks) != 1:
+            self.status_label.setText(
+                "Status: Select a dataset directory containing exactly one *_raw_stack.npy file"
+            )
+            return
+        try:
+            self.load_saved_dataset(stacks[0])
+        except Exception as error:
+            self.status_label.setText(f"Status: Could not reload stack: {error}")
+            return
+        analysis_path = session_dir / "phase_analysis_results.npz"
+        if analysis_path.is_file():
+            try:
+                self.load_saved_analysis(analysis_path)
+            except Exception as error:
+                self.status_label.setText(f"Status: Stack loaded, but saved analysis could not be loaded: {error}")
+                return
+            self.status_label.setText(f"Status: Reloaded stack and saved analysis from {session_dir.name}")
+        else:
+            self.status_label.setText(f"Status: Reloaded stack from {session_dir.name}; no saved analysis found")
+
+    def apply_automatic_analysis_roi(self):
+        vertices = self.phase_analysis_results.get("automatic_roi_vertices")
+        if vertices is None:
+            return False
+        current_mask, _, _ = self.get_current_inside_mask()
+        if current_mask is not None or (self.roi_layer is not None and len(self.roi_layer.data)):
+            return False
+        vertices = np.asarray(vertices, dtype=float)
+        if vertices.shape != (4, 2) or not np.all(np.isfinite(vertices)):
+            raise ValueError("Invalid automatic ROI vertices in analysis results.")
+        if self.phase_analysis_results["roi_mask"].shape != (self.height, self.width):
+            return False
+        self.waiting_for_roi_finish = False
+        if self.roi_layer is None or not any(layer is self.roi_layer for layer in self.viewer.layers):
+            self.roi_layer = self.viewer.add_shapes(
+                name="ROI", ndim=2, shape_type="ellipse", edge_width=3,
+                edge_color="red", face_color=[1, 0, 0, 0.15],
+            )
+            self.roi_layer.events.data.connect(self.on_roi_data_changed)
+        self.roi_layer.add(vertices / self.display_downsample, shape_type="ellipse")
+        self.roi_layer.selected_data = {0}
+        self.roi_layer.visible = True
+        self.roi_layer.mode = "select"
+        self.last_roi_count = 1
+        self.refresh_roi_mask()
+        return True
+
     def reload_analysis_from_file(self):
         if self.phase_capture_active or self.recalibration_active:
             self.status_label.setText("Status: Wait for capture or calibration to finish before loading analysis")
@@ -325,6 +387,7 @@ class CameraPhaseAnalysisController:
                     for key in result_file.files
                 }
 
+            CameraPhaseAnalysisController.apply_automatic_analysis_roi(self)
             self.phase_analysis_view_active = True
             self.create_phase_analysis_controls(selected_key="wrapped")
             self.show_selected_phase_analysis_result(create_new_layer=True)

@@ -119,6 +119,13 @@ class RecalibrationValidationTests(unittest.TestCase):
             [100, 190, 280, 369, 459, 549],
         )
 
+    def test_sixty_degree_coarse_positions_use_three_quarters_spacing(self):
+        positions = build_even_trigger_positions_ms(
+            DEFAULT_RECALIBRATION_CONFIG, phase_step_deg=60.0,
+        )
+        self.assertEqual(positions, [100, 167, 235, 302, 369, 437])
+        self.assertTrue(np.all(np.diff(positions) >= 67))
+
     def test_spacing_enforcement_respects_camera_minimum_and_bounds(self):
         positions = enforce_minimum_trigger_spacing_ms(
             [100, 110, 120, 130, 140, 150],

@@ -84,6 +84,18 @@ def build_analysis_layer_presentation(result_key, result_data, source_name, resu
     }
 
 
+def analysis_display_data(results, result_key):
+    data = results[result_key]
+    if result_key in {"wrapped", "unwrapped"}:
+        return np.asarray(data) / (2 * np.pi), "waves"
+    if result_key == "tilt_removed":
+        wavelength = float(results.get("wavelength_nm", 632.8))
+        return np.asarray(data) * wavelength / (2 * np.pi), "nm OPD"
+    if result_key in {"wavefront_aberration_nm", "residual_nm"}:
+        return data, "nm OPD"
+    return data, ""
+
+
 def create_phase_analysis_controls(selection_changed, view_clicked):
     widget = QWidget()
     widget.setObjectName("embedded_phase_analysis_controls")

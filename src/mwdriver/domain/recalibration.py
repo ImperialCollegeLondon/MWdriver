@@ -84,7 +84,7 @@ def _minimum_spacing(config, camera_required_spacing_ms, requested_spacing_ms=No
     )
 
 
-def build_even_trigger_positions_ms(config):
+def build_even_trigger_positions_ms(config, phase_step_deg=90.0):
     frame_count = config.frame_count
     lower_bound_ms = config.edge_guard_ms
     upper_bound_ms = config.falling_edge_ms - 1 - config.edge_guard_ms
@@ -93,6 +93,8 @@ def build_even_trigger_positions_ms(config):
     if upper_bound_ms <= lower_bound_ms:
         raise ValueError("Upper trigger bound must exceed lower trigger bound.")
 
+    spacing_scale = 0.75 if phase_step_deg == 60.0 else 1.0
+    upper_bound_ms = lower_bound_ms + (upper_bound_ms - lower_bound_ms) * spacing_scale
     return [
         int(round(value))
         for value in np.linspace(lower_bound_ms, upper_bound_ms, frame_count)

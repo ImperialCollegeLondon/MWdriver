@@ -22,6 +22,32 @@ from mwdriver.analysis import phase_analysis_new
 
 
 class PhaseAnalysisPlotTests(unittest.TestCase):
+    def test_analysis_without_roi_exports_circle_used_for_zernike_fit(self):
+        rows, columns = np.indices((48, 64))
+        signal_area = ((rows - 22) / 15) ** 2 + ((columns - 30) / 19) ** 2 <= 1
+        amplitude = np.where(signal_area, 30, 1)
+        phase = 0.02 * columns + 0.03 * rows
+        steps = phase_analysis_new.PSI_ALGORITHMS[phase_analysis_new.DEFAULT_PSI_ALGORITHM]["expected_phase_deg"]
+        frames = np.asarray([100 + amplitude * np.cos(phase + np.deg2rad(step)) for step in steps])
+        with tempfile.TemporaryDirectory() as directory:
+            session = Path(directory)
+            raw_path = session / "capture_raw_stack.npy"
+            export_path = session / "results.npz"
+            np.save(raw_path, frames)
+            with (
+                patch.object(phase_analysis_new, "save_intermediate_png"),
+                patch.object(phase_analysis_new, "analyze_aberration", wraps=phase_analysis_new.analyze_aberration) as fit,
+            ):
+                phase_analysis_new.analyze_capture(session, raw_path, export_path=export_path)
+            with np.load(export_path, allow_pickle=False) as archive:
+                vertices = archive["automatic_roi_vertices"]
+                roi_mask = archive["roi_mask"]
+                self.assertTrue(np.all(roi_mask[signal_area]))
+                self.assertFalse(np.all(roi_mask))
+                self.assertAlmostEqual(vertices[1, 1] - vertices[0, 1], vertices[2, 0] - vertices[1, 0])
+                np.testing.assert_array_equal(fit.call_args.kwargs["pupil_vertices"], vertices)
+                np.testing.assert_array_equal(fit.call_args.kwargs["coordinate_mask"], roi_mask)
+
     def test_wavefront_surfaces_share_scale_and_exclude_masked_faces(self):
         from mpl_toolkits.mplot3d import Axes3D
         from mwdriver.analysis.phase_analysis_plots import figure_to_rgb
@@ -97,6 +123,7 @@ class PhaseAnalysisPlotTests(unittest.TestCase):
 
             with np.load(export_path, allow_pickle=False) as archive:
                 np.testing.assert_array_equal(archive["roi_mask"], roi_mask)
+                self.assertNotIn("automatic_roi_vertices", archive.files)
                 self.assertEqual(archive["roi_mask"].dtype, np.dtype(bool))
                 self.assertIn("wrapped", archive.files)
                 self.assertEqual(archive["wavefront_surfaces_plot_rgb"].shape, (1080, 1440, 3))

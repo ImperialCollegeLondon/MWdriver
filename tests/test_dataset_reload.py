@@ -14,6 +14,58 @@ from mwdriver.ui.camera_phase_analysis_controller import CameraPhaseAnalysisCont
 
 
 class DatasetReloadTests(unittest.TestCase):
+    def test_directory_picker_loads_stack_and_optional_saved_analysis(self):
+        for has_analysis in (True, False):
+            with self.subTest(has_analysis=has_analysis), tempfile.TemporaryDirectory() as directory:
+                controller = self.make_controller()
+                controller.create_phase_analysis_controls = MagicMock()
+                controller.show_selected_phase_analysis_result = MagicMock()
+                session = Path(directory)
+                frames = np.ones((6, 4, 5), dtype=np.uint16)
+                np.save(session / "measure_test_raw_stack.npy", frames)
+                if has_analysis:
+                    np.savez(session / "phase_analysis_results.npz", wrapped=np.ones((4, 5)))
+                with patch("mwdriver.ui.camera_phase_analysis_controller.QFileDialog.getExistingDirectory", return_value=directory):
+                    controller.reload_stack_from_directory()
+                np.testing.assert_array_equal(controller.viewer.add_image.call_args.args[0], frames)
+                self.assertEqual(len(controller.phase_capture_time_series_layers), 1)
+                self.assertEqual(controller.show_selected_phase_analysis_result.called, has_analysis)
+                if has_analysis:
+                    self.assertIn("wrapped", controller.phase_analysis_results)
+                else:
+                    self.assertIn("no saved analysis", controller.status_label.setText.call_args.args[0])
+
+    def test_directory_picker_rejects_missing_or_ambiguous_stacks(self):
+        for count in (0, 2):
+            with self.subTest(count=count), tempfile.TemporaryDirectory() as directory:
+                controller = self.make_controller()
+                for index in range(count):
+                    np.save(Path(directory) / f"capture_{index}_raw_stack.npy", np.ones((6, 4, 5)))
+                with patch("mwdriver.ui.camera_phase_analysis_controller.QFileDialog.getExistingDirectory", return_value=directory):
+                    controller.reload_stack_from_directory()
+                controller.viewer.add_image.assert_not_called()
+
+    def test_directory_picker_cancel_or_capture_does_not_load(self):
+        controller = self.make_controller()
+        with patch("mwdriver.ui.camera_phase_analysis_controller.QFileDialog.getExistingDirectory", return_value="") as picker:
+            controller.reload_stack_from_directory()
+            picker.assert_called_once()
+            picker.reset_mock()
+            controller.phase_capture_active = True
+            controller.reload_stack_from_directory()
+            picker.assert_not_called()
+        controller.viewer.add_image.assert_not_called()
+
+    def test_corrupt_saved_analysis_does_not_discard_loaded_stack(self):
+        with tempfile.TemporaryDirectory() as directory:
+            controller = self.make_controller()
+            np.save(Path(directory) / "capture_raw_stack.npy", np.ones((6, 4, 5)))
+            np.savez(Path(directory) / "phase_analysis_results.npz", unrelated=np.ones(3))
+            with patch("mwdriver.ui.camera_phase_analysis_controller.QFileDialog.getExistingDirectory", return_value=directory):
+                controller.reload_stack_from_directory()
+            self.assertEqual(len(controller.phase_capture_time_series_layers), 1)
+            self.assertIn("Stack loaded, but", controller.status_label.setText.call_args.args[0])
+
     def test_reload_analysis_restores_results_without_recalculation(self):
         controller = self.make_controller()
         controller.create_phase_analysis_controls = MagicMock()

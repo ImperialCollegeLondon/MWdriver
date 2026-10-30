@@ -164,6 +164,7 @@ class ThorlabsCameraViewer(
 
         self.is_streaming = False
         self.streaming_allowed = True
+        self.diagnostic_plots_enabled = False
 
         self.worker = None
         self.worker_thread = None

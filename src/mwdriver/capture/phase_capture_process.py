@@ -29,6 +29,7 @@ def run_phase_check(
     python_executable=None,
     runner: Callable = subprocess.run,
     roi_mask=None,
+    diagnostic_plots=True,
 ):
     session_dir = os.path.abspath(session_dir)
     if not os.path.exists(check_script):
@@ -41,6 +42,8 @@ def run_phase_check(
     if python_executable is None:
         python_executable = sys.executable
     command = [python_executable, check_script, session_dir]
+    if not diagnostic_plots:
+        command.append("--no-diagnostic-plots")
     temporary_mask_path = None
     output_figure_path = os.path.join(
         session_dir,

@@ -5,6 +5,7 @@ from mwdriver.diagnostics import LOGGER
 
 from mwdriver.domain.layer_visibility import build_layer_visibility_plan
 from mwdriver.ui.phase_analysis_controls import (
+    analysis_display_data,
     build_analysis_layer_presentation,
     build_phase_analysis_result_options,
     choose_analysis_layer_operation,
@@ -109,11 +110,20 @@ class CameraViewController:
             plan.analysis_layers_visible,
         ):
             record["layer"].visible = visible
+            colourbar = getattr(record["layer"], "colorbar", None)
+            if colourbar is not None:
+                colourbar.visible = visible and not getattr(record["layer"], "rgb", False)
         for layer, visible in zip(
             self.phase_capture_time_series_layers,
             plan.time_series_layers_visible,
         ):
             layer.visible = visible
+        text_overlay = getattr(self.viewer, "text_overlay", None)
+        if text_overlay is not None:
+            units = getattr(selected_layer, "metadata", {}).get("colourbar_units", "") if mode == "analysis" else ""
+            text_overlay.text = f"Colourbar: {units}" if units else ""
+            text_overlay.position = "bottom_right"
+            text_overlay.visible = bool(units)
         if mode == "time_series" and selected_layer is not None:
             time_axis = self.viewer.dims.ndim - selected_layer.ndim
             frame_count = selected_layer.data.shape[0]
@@ -221,7 +231,10 @@ class CameraViewController:
         surface = build_wavefront_surface(self.phase_analysis_results, result_key) if is_surface else None
         if surface is not None:
             LOGGER.debug("Mesh ready shapes=%s limits=%s scale=%s", [array.shape for array in surface["data"]], surface["contrast_limits"], surface["scale"])
-        result_data = surface["data"] if is_surface else self.phase_analysis_results[result_key]
+        if is_surface:
+            result_data, colourbar_units = surface["data"], "nm OPD"
+        else:
+            result_data, colourbar_units = analysis_display_data(self.phase_analysis_results, result_key)
         result_name = self.phase_analysis_selector.currentText()
         source_name = self.phase_analysis_source_stack_name or "unknown stack"
         presentation = build_analysis_layer_presentation(
@@ -231,6 +244,8 @@ class CameraViewController:
             result_name,
         )
         layer_name = presentation["name"]
+        if colourbar_units:
+            layer_name += f" ({colourbar_units})"
         is_rgb = presentation["is_rgb"]
         colormap = presentation["colormap"]
         contrast_limits = presentation["contrast_limits"]
@@ -318,6 +333,7 @@ class CameraViewController:
                     self.phase_analysis_layer.contrast_limits = contrast_limits
             current_record["selected_key"] = result_key
 
+        self.phase_analysis_layer.metadata["colourbar_units"] = colourbar_units
         LOGGER.debug("Applying analysis visibility")
         self.apply_layer_visibility_plan(
             "analysis",

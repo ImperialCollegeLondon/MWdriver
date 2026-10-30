@@ -47,7 +47,7 @@ class CameraRecalibrationController:
 
     def build_even_falling_edge_positions_ms(self):
         """
-        Build six trigger times across the falling edge with guard margins.
+        Build six guarded trigger times with spacing scaled to the PSI method.
 
         The first/last few milliseconds are intentionally avoided because
         camera arm latency and waveform boundary transitions can increase
@@ -55,6 +55,7 @@ class CameraRecalibrationController:
         """
         positions = build_even_trigger_positions_ms(
             RECALIBRATION_CONFIG,
+            phase_step_deg=get_psi_algorithm(self.selected_psi_algorithm_id)["phase_step_deg"],
         )
         return self.validate_trigger_positions_ms(positions)
 
@@ -534,6 +535,7 @@ class CameraRecalibrationController:
             return
 
         self.recalibration_active = True
+        self.recalibration_plot_history = []
         self.sync_stream_with_active_layer()
         self.recalibration_stage = "coarse_capture"
         self.recalibration_coarse_positions_ms = coarse_positions

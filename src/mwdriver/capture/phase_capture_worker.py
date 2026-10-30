@@ -50,6 +50,7 @@ class PhaseSaveWorker(QObject):
         phase_check_timeout_s=DEFAULT_PHASE_CHECK_TIMEOUT_S,
         voltage_mapper=None,
         recalibration_config=DEFAULT_RECALIBRATION_CONFIG,
+        diagnostic_plots=True,
     ):
         super().__init__()
         self.frames = frames
@@ -64,6 +65,7 @@ class PhaseSaveWorker(QObject):
         self.phase_check_timeout_s = phase_check_timeout_s
         self.voltage_mapper = voltage_mapper
         self.recalibration_config = recalibration_config
+        self.diagnostic_plots = diagnostic_plots
 
     def run_automatic_phase_check(self, session_dir):
         session_dir = os.path.abspath(session_dir)
@@ -82,6 +84,7 @@ class PhaseSaveWorker(QObject):
             str(MODULE_DIR),
             self.phase_check_timeout_s,
             roi_mask=self.roi_mask,
+            diagnostic_plots=self.diagnostic_plots,
         )
         if result.stdout:
             print("Automatic phase-check stdout:")
@@ -249,11 +252,12 @@ class PhaseSaveWorker(QObject):
                 except Exception as error:
                     print("Read measured phase for plot warning:", error)
                     measured_phase_deg = None
-                voltage_plot_path = self.save_phase_vs_voltage_plot(
-                    session_dir,
-                    timestamp,
-                    measured_phase_deg,
-                )
+                if self.diagnostic_plots:
+                    voltage_plot_path = self.save_phase_vs_voltage_plot(
+                        session_dir,
+                        timestamp,
+                        measured_phase_deg,
+                    )
 
             if phase_check.success:
                 finish_text = f"Phase capture saved and checked: 6 frames in {session_dir}"

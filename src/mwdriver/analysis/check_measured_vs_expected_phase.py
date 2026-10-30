@@ -322,16 +322,34 @@ def _find_adaptive_conjugate_peak(spectrum):
     }
 
 
-def extract_complex_fields(stack):
+def _resolve_phase_roi(frame_shape, roi_mask):
+    height, width = frame_shape
+    if roi_mask is None:
+        half_size = max(1, min(200, height // 4, width // 4))
+        centre_y, centre_x = height // 2, width // 2
+        roi_mask = np.zeros(frame_shape, dtype=bool)
+        roi_mask[max(0, centre_y - half_size):centre_y + half_size,
+                 max(0, centre_x - half_size):centre_x + half_size] = True
+    else:
+        roi_mask = np.asarray(roi_mask, dtype=bool)
+    if roi_mask.shape != frame_shape:
+        raise ValueError(f"ROI mask shape {roi_mask.shape} does not match frame shape {frame_shape}.")
+    if not np.any(roi_mask):
+        raise ValueError("Current ROI contains no valid pixels.")
+    return roi_mask
+
+
+def extract_complex_fields(stack, roi_mask=None):
     data = np.asarray(stack, dtype=np.float64)
     if data.ndim != 3 or data.shape[0] < 2:
         raise ValueError(
             f"Expected image stack shape (N,H,W) with N >= 2, got {data.shape}."
         )
 
-    # Remove a per-frame scalar background before FFT.  This reduces DC leakage
-    # while leaving the carrier phase unchanged.
-    data = data - np.median(data, axis=(1, 2), keepdims=True)
+    roi_mask = _resolve_phase_roi(data.shape[1:], roi_mask)
+    data = data.copy()
+    data[:, roi_mask] -= np.mean(data[:, roi_mask], axis=1, keepdims=True)
+    data[:, ~roi_mask] = 0
 
     data_ft = np.fft.fftshift(
         np.fft.fft2(data, axes=(1, 2)),
@@ -349,17 +367,15 @@ def extract_complex_fields(stack):
     peak_x_float = peak["peak_x_float"]
     peak_distance = peak["peak_distance"]
 
-    # Keep the sideband mask below half the DC-to-carrier distance so it cannot
-    # overlap the DC lobe.  The upper cap prevents excessively broad masks on
-    # high-fringe-count images.
-    mask_radius = int(np.clip(0.30 * peak_distance, 5, 34))
-    mask_sigma = max(2.5, mask_radius / 2.2)
-
-    distance = np.sqrt(
-        (yy - peak_y_float) ** 2
-        + (xx - peak_x_float) ** 2
-    )
-    mask = np.exp(-0.5 * (distance / mask_sigma) ** 2)
+    mask_radius = int(peak["dc_radius"])
+    dc_suppression_sigma = float(mask_radius)
+    selected_half_plane = (
+        (xx - cx) * (peak_x_float - cx)
+        + (yy - cy) * (peak_y_float - cy)
+    ) > 0
+    dc_distance_squared = (xx - cx) ** 2 + (yy - cy) ** 2
+    dc_suppression = -np.expm1(-0.5 * dc_distance_squared / dc_suppression_sigma ** 2)
+    mask = selected_half_plane * dc_suppression
 
     complex_fields = np.fft.ifft2(
         np.fft.ifftshift(
@@ -371,6 +387,9 @@ def extract_complex_fields(stack):
 
     info = {
         "spectrum": spectrum,
+        "fourier_mask": mask,
+        "filter_type": "selected_half_plane_gaussian_dc_suppression",
+        "dc_suppression_sigma": dc_suppression_sigma,
         "peak_x": int(peak["peak_x"]),
         "peak_y": int(peak["peak_y"]),
         "peak_x_float": float(peak_x_float),
@@ -401,28 +420,12 @@ def extract_complex_fields(stack):
 
 
 def estimate_phase_curve(stack, roi_mask=None):
-    complex_fields, fft_info = extract_complex_fields(stack)
-    _, height, width = complex_fields.shape
-
-    if roi_mask is not None:
-        roi_mask = np.asarray(roi_mask, dtype=bool)
-        if roi_mask.shape != (height, width):
-            raise ValueError(
-                f"ROI mask shape {roi_mask.shape} does not match "
-                f"frame shape {(height, width)}."
-            )
-        if not np.any(roi_mask):
-            raise ValueError("Current ROI contains no valid pixels.")
-        reference = complex_fields[0][roi_mask]
-    else:
-        cy = height // 2
-        cx = width // 2
-        roi_half_size = min(200, height // 4, width // 4)
-        y1 = cy - roi_half_size
-        y2 = cy + roi_half_size
-        x1 = cx - roi_half_size
-        x2 = cx + roi_half_size
-        reference = complex_fields[0, y1:y2, x1:x2]
+    stack = np.asarray(stack)
+    if stack.ndim != 3 or stack.shape[0] < 2:
+        raise ValueError(f"Expected image stack shape (N,H,W) with N >= 2, got {stack.shape}.")
+    roi_mask = _resolve_phase_roi(stack.shape[1:], roi_mask)
+    complex_fields, fft_info = extract_complex_fields(stack, roi_mask=roi_mask)
+    reference = complex_fields[0][roi_mask]
 
     reference_energy = float(np.sum(np.abs(reference) ** 2))
     if reference_energy <= 0:
@@ -432,7 +435,7 @@ def estimate_phase_curve(stack, roi_mask=None):
     correlation_magnitudes = []
 
     for field in complex_fields:
-        current = field[roi_mask] if roi_mask is not None else field[y1:y2, x1:x2]
+        current = field[roi_mask]
         numerator = np.sum(current * np.conj(reference))
         current_energy = float(np.sum(np.abs(current) ** 2))
         denominator = np.sqrt(current_energy * reference_energy)
@@ -448,9 +451,12 @@ def estimate_phase_curve(stack, roi_mask=None):
 
     # Either member of a conjugate pair contains the same phase information
     # with opposite sign.  Normalize to the increasing falling-edge convention.
-    if np.median(np.diff(phase_rad)) < 0:
+    phase_sign = -1 if np.median(np.diff(phase_rad)) < 0 else 1
+    if phase_sign < 0:
         phase_rad = -phase_rad
 
+    fft_info["complex_fields"] = complex_fields
+    fft_info["relative_phase_sign"] = phase_sign
     fft_info["phase_correlation_magnitudes"] = correlation_magnitudes
     fft_info["minimum_phase_correlation"] = float(min(correlation_magnitudes))
 
@@ -460,6 +466,86 @@ def estimate_phase_curve(stack, roi_mask=None):
 # ============================================================
 # Plot
 # ============================================================
+
+def create_fourier_filter_plot(diagnostics, session_dir):
+    spectrum = np.asarray(diagnostics["spectrum"])
+    mask = np.asarray(diagnostics["fourier_mask"])
+    log_spectrum = np.log10(1 + spectrum)
+    figure, axes = plt.subplots(2, 2, figsize=(13, 10), layout="constrained")
+    peak_x = diagnostics["peak_x_float"]
+    peak_y = diagnostics["peak_y_float"]
+    dc_x = diagnostics["dc_x"]
+    dc_y = diagnostics["dc_y"]
+    margin = max(20, 4 * diagnostics["dc_suppression_sigma"])
+    panels = (
+        (log_spectrum, "Frame 0 Fourier spectrum", "magma", "log10(1 + FFT magnitude)"),
+        (log_spectrum, "Spectrum and filter contours (zoom)", "magma", "log10(1 + FFT magnitude)"),
+        (mask, "Half-plane and DC suppression weights", "viridis", "Filter weight"),
+        (np.log10(1 + spectrum * mask), "Filtered frame 0 spectrum (zoom)", "magma", "log10(1 + filtered FFT magnitude)"),
+    )
+    try:
+        for index, (axis, (values, title, colormap, colourbar_label)) in enumerate(zip(axes.flat, panels)):
+            limits = {"vmin": 0, "vmax": 1} if index == 2 else {"vmin": 0, "vmax": float(log_spectrum.max())}
+            image = axis.imshow(values, cmap=colormap, origin="upper", **limits)
+            if index < 2:
+                contours = axis.contour(mask, levels=[0.1, 0.5, 0.9], colors="cyan", linewidths=0.8)
+                if index == 1:
+                    axis.clabel(contours, fmt="%.1f", fontsize=8)
+            axis.plot(dc_x, dc_y, "w+", label="DC", markersize=9)
+            axis.plot(peak_x, peak_y, "gx", label="Selected sideband", markersize=8)
+            if index in (1, 3):
+                axis.set_xlim(max(-0.5, min(dc_x, peak_x) - margin), min(spectrum.shape[1] - 0.5, max(dc_x, peak_x) + margin))
+                axis.set_ylim(min(spectrum.shape[0] - 0.5, max(dc_y, peak_y) + margin), max(-0.5, min(dc_y, peak_y) - margin))
+            axis.set_title(title)
+            axis.set_xlabel("Fourier x bin (fftshift)")
+            axis.set_ylabel("Fourier y bin (fftshift)")
+            figure.colorbar(image, ax=axis, label=colourbar_label, shrink=0.85)
+        axes[0, 0].legend(fontsize=8)
+        figure.suptitle(f"Half-plane filter: Gaussian DC suppression sigma = {diagnostics['dc_suppression_sigma']:.2f} bins")
+        output_path = Path(session_dir) / "fourier_spectrum_and_mask.png"
+        figure.savefig(output_path, dpi=150)
+        return str(output_path)
+    finally:
+        plt.close(figure)
+
+
+def create_field_maps(complex_fields, session_dir, phase_sign=1):
+    fields = np.asarray(complex_fields)
+    amplitude = np.abs(fields)
+    relative_phase = np.rad2deg(np.angle(
+        fields * np.conj(fields[0])
+    )) * phase_sign
+    outputs = {}
+    for name, maps, colormap, limits, label in (
+        ("field_amplitude", amplitude, "viridis", (0, float(np.max(amplitude))),
+         "FFT sideband field amplitude (camera intensity units)"),
+        ("relative_phase", relative_phase, "twilight", (-180, 180),
+         "Wrapped phase relative to frame 0 (deg)"),
+    ):
+        columns = min(3, len(fields))
+        rows = (len(fields) + columns - 1) // columns
+        figure, axes = plt.subplots(
+            rows, columns, figsize=(4 * columns, 3.5 * rows),
+            squeeze=False, layout="constrained",
+        )
+        try:
+            for index, axis in enumerate(axes.flat):
+                if index >= len(fields):
+                    axis.set_visible(False)
+                    continue
+                image = axis.imshow(maps[index], cmap=colormap, vmin=limits[0], vmax=limits[1])
+                axis.set_title(f"Frame {index}")
+                axis.set_xlabel("x (pixel)")
+                axis.set_ylabel("y (pixel)")
+            figure.colorbar(image, ax=list(axes.flat), label=label, shrink=0.85)
+            figure.suptitle("Field amplitude" if name == "field_amplitude" else "Phase relative to frame 0")
+            output_path = Path(session_dir) / f"{name}_maps.png"
+            figure.savefig(output_path, dpi=150)
+            outputs[name] = str(output_path)
+        finally:
+            plt.close(figure)
+    return outputs
+
 
 def create_annotated_plot(
     measured_phase_deg,
@@ -583,6 +669,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("session_dir", nargs="?")
     parser.add_argument("--roi-mask", type=Path)
+    parser.add_argument("--no-diagnostic-plots", action="store_true")
     arguments = parser.parse_args(argv)
     session_dir = find_capture_folder(arguments.session_dir)
     raw_stack_path = find_raw_stack(session_dir)
@@ -604,6 +691,8 @@ def main(argv=None):
     print(session_dir)
     print("\nRaw stack:")
     print(raw_stack_path)
+    print("\nROI mask:")
+    print(arguments.roi_mask)
 
     data = np.load(
         raw_stack_path
@@ -677,12 +766,12 @@ def main(argv=None):
     diagnostics_for_json = {
         key: value
         for key, value in diagnostics.items()
-        if key != "spectrum"
+        if key not in {"spectrum", "fourier_mask", "complex_fields", "relative_phase_sign"}
     }
 
     result = {
         "analysis_method": (
-            "adaptive_full_plane_conjugate_pair_fft_sideband_unwrapped_phase"
+            "adaptive_half_plane_gaussian_dc_suppression_unwrapped_phase"
         ),
         "capture_folder": str(session_dir),
         "raw_stack_path": str(raw_stack_path),
@@ -722,6 +811,15 @@ def main(argv=None):
             output_figure_path
         ),
     }
+
+    if not arguments.no_diagnostic_plots and "fourier_mask" in diagnostics:
+        result["fourier_filter_plot_path"] = create_fourier_filter_plot(diagnostics, session_dir)
+
+    if not arguments.no_diagnostic_plots and "complex_fields" in diagnostics:
+        result["field_map_paths"] = create_field_maps(
+            diagnostics["complex_fields"], session_dir,
+            phase_sign=diagnostics["relative_phase_sign"],
+        )
 
     with open(
         output_json_path,

@@ -1399,12 +1399,13 @@ class CameraContractTests(unittest.TestCase):
             phase_check,
             "extract_complex_fields",
             return_value=(fields, {}),
-        ):
+        ) as extract_fields:
             measured, _ = phase_check.estimate_phase_curve(
                 np.zeros((6, 5, 5)),
                 roi_mask=roi_mask,
             )
 
+        self.assertIs(extract_fields.call_args.kwargs["roi_mask"], roi_mask)
         np.testing.assert_allclose(measured, np.rad2deg(phase_steps), atol=1e-10)
 
     def test_phase_check_process_reports_nonzero_or_missing_outputs(self):
@@ -1521,6 +1522,19 @@ class CameraContractTests(unittest.TestCase):
             abs(new - old) <= DEFAULT_RECALIBRATION_CONFIG.large_error_time_step_ms
             for old, new in zip(current_positions, refined)
         ))
+
+    def test_coarse_positions_follow_selected_psi_method(self):
+        for algorithm_id, expected in (
+            ("six_frame_90deg", [100, 190, 280, 369, 459, 549]),
+            ("six_bucket_60deg", [100, 167, 235, 302, 369, 437]),
+        ):
+            with self.subTest(algorithm_id=algorithm_id):
+                viewer = SimpleNamespace(
+                    selected_psi_algorithm_id=algorithm_id,
+                    validate_trigger_positions_ms=lambda positions: positions,
+                )
+                positions = camera.CameraRecalibrationController.build_even_falling_edge_positions_ms(viewer)
+                self.assertEqual(positions, expected)
 
     def test_short_coarse_span_queues_verification_capture(self):
         queued = []
