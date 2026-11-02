@@ -242,23 +242,23 @@ Offline analysis needs only NumPy and Matplotlib.
    To analyse a particular saved stack, select its layer and choose
    **Analysis > Analyze Selected Stack**. **Analyze Latest Capture** remains
    available when you want the most recently saved phase capture instead.
-   Use **Analysis > Reload Stack...** to choose an existing acquired dataset
+   Use **Analysis > Reload Dataset...** to choose an existing acquired dataset
    directory. It loads the directory's single `*_raw_stack.npy` with capture
    metadata and, if present, `phase_analysis_results.npz` without recalculation.
    Saved analysis opens for review while the raw stack remains in the layer list.
    Without saved analysis, the raw stack is shown ready for analysis. Current
    camera settings and ROI are preserved.
-   To reopen a dataset from an earlier run, choose **File > Reload Dataset...**
+   To reopen a single raw stack from an earlier run, choose **Analysis > Reload Stack...**
    and select its `*_raw_stack.npy` file. The six-frame stack and adjacent capture
    metadata are restored as a new layer; choose **Analyze Selected Stack** to
    analyse it using the current ROI. Loading does not change camera settings or
    replace the current ROI. Older stacks without metadata default to the
    90-degree phase-step method.
-   To review existing analysis without recalculating, choose **File > Reload
+   To review existing analysis without recalculating, choose **Analysis > Reload
    Analysis...** and select `phase_analysis_results.npz`. This creates a new
    analysis view with the saved images, charts and available interactive 3D
    surfaces. It does not reload the raw capture stack or change the current ROI
-   or camera settings; use **Reload Dataset...** separately when needed.
+   or camera settings; use **Reload Stack...** separately when needed.
    If the managed ROI layer has been deleted, **ROI > Reload ROI** recreates it
    and restores the last separately saved ellipse from `Documents/MWDriver`.
    The restored layer reconnects mask updates and opens in 2D selection mode.

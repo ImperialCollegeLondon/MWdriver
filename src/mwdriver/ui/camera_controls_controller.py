@@ -87,27 +87,22 @@ class CameraControlsController:
         qt_window = self.viewer.window._qt_window
         menubar = qt_window.menuBar()
 
-        file_menu = next((
-            action.menu() for action in menubar.actions()
-            if action.text().replace("&", "").lower() == "file"
-        ), None)
-        if file_menu is None:
-            file_menu = menubar.addMenu("File")
-        self.reload_dataset_action = QAction("Reload Dataset...", qt_window)
-        self.reload_dataset_action.setStatusTip("Open a saved six-frame camera dataset")
+        self.reload_dataset_action = QAction("Reload Stack...", qt_window)
+        self.reload_dataset_action.setStatusTip("Open a saved six-frame camera stack")
         self.reload_dataset_action.triggered.connect(self.reload_dataset_from_file)
-        file_menu.addAction(self.reload_dataset_action)
         self.reload_analysis_action = QAction("Reload Analysis...", qt_window)
         self.reload_analysis_action.setStatusTip("Open saved phase-analysis results without recalculating")
         self.reload_analysis_action.triggered.connect(self.reload_analysis_from_file)
-        file_menu.addAction(self.reload_analysis_action)
 
         self.camera_menu = menubar.addMenu("Camera")
         self.analysis_menu = menubar.addMenu("Analysis")
-        self.reload_stack_action = QAction("Reload Stack...", qt_window)
-        self.reload_stack_action.setStatusTip("Load an acquired dataset directory and its saved analysis")
+        self.reload_stack_action = QAction("Reload Dataset...", qt_window)
+        self.reload_stack_action.setStatusTip("Load a dataset directory and its saved analysis")
         self.reload_stack_action.triggered.connect(self.reload_stack_from_directory)
         self.analysis_menu.addAction(self.reload_stack_action)
+        self.analysis_menu.addSeparator()
+        self.analysis_menu.addAction(self.reload_dataset_action)
+        self.analysis_menu.addAction(self.reload_analysis_action)
         self.analysis_menu.addSeparator()
         self.diagnostic_plots_action = QAction("Extra Diagnostic Plots", qt_window)
         self.diagnostic_plots_action.setCheckable(True)
