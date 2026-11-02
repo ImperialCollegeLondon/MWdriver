@@ -179,6 +179,32 @@ Offline analysis needs only NumPy and Matplotlib.
 - Set `PICO_PORT` in `camera.py` to the Pico's serial port (default `COM4`);
   `PICO_BAUDRATE` defaults to 115200.
 
+### Windows Standalone Installation
+
+Build the standalone application from a Windows checkout using a 64-bit Python
+environment with the project dependencies and official Thorlabs Python SDK
+installed:
+
+```powershell
+python -m pip install -r requirements-build.txt
+.\packaging\build-windows.ps1
+```
+
+The one-folder build is written to `dist\MWdriver`. For a machine-wide installer,
+install Inno Setup 6 (per-user installation is sufficient) and run:
+
+```powershell
+.\packaging\build-windows.ps1 -Installer
+```
+
+This creates `release\MWdriver-Setup-1.0.0.exe`. Run the installer as an
+administrator to install under `C:\Program Files\MWdriver` and create a shared
+Start menu shortcut. Each person’s captures, ROI and calibration remain in that
+person’s own Documents folder. Installing the application does not install
+camera drivers: install the official Thorlabs camera driver/ThorCam on the
+machine first. The installer compiler is a separate build prerequisite and is
+not included in the repository.
+
 ## Workflow
 
 1. Copy `pypico/main.py` to the Pico using a MicroPython-capable tool, such as

@@ -15,6 +15,7 @@ from mwdriver.capture.phase_capture_storage import PhaseSaveResult
 from mwdriver.domain.phase_psi import get_algorithm_id_from_metadata, get_algorithm
 from mwdriver.paths import RESULTS_DIR
 from mwdriver.ui.phase_analysis_controls import build_phase_analysis_result_options
+from mwdriver.runtime import build_worker_command
 
 
 SCRIPT_DIR = str(Path(__file__).resolve().parents[2])
@@ -264,7 +265,8 @@ class CameraPhaseAnalysisController:
             )
             return
 
-        if not os.path.isfile(PHASE_ANALYSIS_SCRIPT):
+        frozen = getattr(sys, "frozen", False)
+        if not frozen and not os.path.isfile(PHASE_ANALYSIS_SCRIPT):
             self.status_label.setText(
                 f"Status: Phase analysis script not found: {PHASE_ANALYSIS_SCRIPT}"
             )
@@ -304,14 +306,16 @@ class CameraPhaseAnalysisController:
             if self.view_phase_analysis_button is not None:
                 self.view_phase_analysis_button.setEnabled(False)
 
-            analysis_command = [
-                sys.executable,
+            analysis_command = build_worker_command(
+                "phase-analysis",
                 PHASE_ANALYSIS_SCRIPT,
+                [
                 session_dir,
                 "--no-viewer",
                 "--export",
                 self.phase_analysis_output_path,
-            ]
+                ],
+            )
             current_inside_mask, roi_type, roi_info = self.get_current_inside_mask()
             self.phase_analysis_roi_mask_path = None
             if current_inside_mask is not None:
@@ -332,7 +336,7 @@ class CameraPhaseAnalysisController:
 
             self.phase_analysis_process = subprocess.Popen(
                 analysis_command,
-                cwd=SCRIPT_DIR,
+                cwd=session_dir if frozen else SCRIPT_DIR,
             )
             self.status_label.setText(
                 f"Status: Analyzing {description} in background: "

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
+from mwdriver.runtime import build_worker_command
 
 @dataclass(frozen=True)
 class PhaseCheckResult:
@@ -32,16 +33,20 @@ def run_phase_check(
     diagnostic_plots=True,
 ):
     session_dir = os.path.abspath(session_dir)
-    if not os.path.exists(check_script):
+    frozen = getattr(sys, "frozen", False)
+    if not frozen and not os.path.exists(check_script):
         message = (
             "Automatic phase check skipped: checker script not found: "
             f"{check_script}"
         )
         return PhaseCheckResult(False, message, None)
 
-    if python_executable is None:
-        python_executable = sys.executable
-    command = [python_executable, check_script, session_dir]
+    command = build_worker_command(
+        "phase-check",
+        check_script,
+        [session_dir],
+        python_executable=python_executable,
+    )
     if not diagnostic_plots:
         command.append("--no-diagnostic-plots")
     temporary_mask_path = None
@@ -65,7 +70,7 @@ def run_phase_check(
 
         completed_process = runner(
             command,
-            cwd=working_directory,
+            cwd=session_dir if frozen else working_directory,
             capture_output=True,
             text=True,
             timeout=timeout_s,

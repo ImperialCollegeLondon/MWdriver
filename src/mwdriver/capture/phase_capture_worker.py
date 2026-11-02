@@ -23,6 +23,7 @@ from mwdriver.capture.phase_capture_storage import (
 from mwdriver.domain.phase_psi import DEFAULT_ALGORITHM
 from mwdriver.domain.recalibration import DEFAULT_RECALIBRATION_CONFIG
 from mwdriver.paths import RESULTS_DIR
+from mwdriver.runtime import build_worker_command
 
 
 MODULE_DIR = Path(__file__).resolve().parents[2]
@@ -69,7 +70,9 @@ class PhaseSaveWorker(QObject):
 
     def run_automatic_phase_check(self, session_dir):
         session_dir = os.path.abspath(session_dir)
-        command = [sys.executable, self.phase_check_script, session_dir]
+        command = build_worker_command(
+            "phase-check", self.phase_check_script, [session_dir]
+        )
         print("====================================")
         print("Starting automatic phase check")
         print("Command:", command)

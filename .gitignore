@@ -12,6 +12,7 @@ __pycache__/
 # Python packaging and build output
 build/
 dist/
+release/
 *.egg-info/
 
 # Test, coverage, and type-checker caches
