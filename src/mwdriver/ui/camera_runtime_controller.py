@@ -1,6 +1,7 @@
 """Camera acquisition and Pico worker lifecycle for the desktop viewer."""
 
 import time
+from threading import Event
 
 import numpy as np
 from qtpy.QtCore import QObject, QThread, Signal
@@ -16,12 +17,35 @@ class CameraWorker(QObject):
     fps_ready = Signal(float)
     status_ready = Signal(str)
 
-    def __init__(self, cam, display_downsample=1, phase_mode_getter=None):
+    def __init__(self, cam, display_downsample=1, phase_mode_getter=None, histogram_enabled_getter=None):
         super().__init__()
 
         self.cam = cam
         self.display_downsample = display_downsample
         self.phase_mode_getter = phase_mode_getter
+        self.histogram_enabled_getter = histogram_enabled_getter
+        self.preview_frame_pending = Event()
+        self.last_preview_emit = float("-inf")
+        self._initialize_frame_statistics()
+
+    def acknowledge_preview_frame(self):
+        self.preview_frame_pending.clear()
+
+    def publish_frame(self, raw_frame, frame_meta, external_capture=False):
+        if not external_capture:
+            histogram_enabled = callable(self.histogram_enabled_getter) and self.histogram_enabled_getter()
+            now = time.monotonic()
+            if self.preview_frame_pending.is_set() or (
+                histogram_enabled and now - self.last_preview_emit < 0.2
+            ):
+                return False
+            self.preview_frame_pending.set()
+            self.last_preview_emit = now
+        display_frame = prepare_display_frame(raw_frame, self.display_downsample)
+        self.frame_ready.emit(raw_frame, display_frame, frame_meta)
+        return True
+
+    def _initialize_frame_statistics(self):
 
         self.running = False
 
@@ -31,6 +55,7 @@ class CameraWorker(QObject):
         self.fps_update_interval = 1.0
 
     def run(self):
+        self._initialize_frame_statistics()
         self.running = True
 
         self.n_frames = 0
@@ -130,12 +155,7 @@ class CameraWorker(QObject):
 
                     frame_meta = raw_frame_infos[index] if index < len(raw_frame_infos) else None
 
-                    display_frame = prepare_display_frame(
-                        raw_frame,
-                        self.display_downsample,
-                    )
-
-                    self.frame_ready.emit(raw_frame, display_frame, frame_meta)
+                    self.publish_frame(raw_frame, frame_meta, external_capture=in_phase_external_mode)
 
                     self.n_frames += 1
 
@@ -182,7 +202,10 @@ class CameraRuntimeController:
             phase_mode_getter=lambda: (
                 self.phase_capture_active
                 and self.current_camera_mode == "external"
-            )
+            ),
+            histogram_enabled_getter=lambda: bool(
+                getattr(getattr(self.layer, "histogram", None), "enabled", False)
+            ),
         )
 
         self.worker.moveToThread(self.worker_thread)
@@ -216,6 +239,14 @@ class CameraRuntimeController:
         self.fps_label.setText("FPS: --")
 
     def update_frame(self, raw_frame, display_frame, frame_meta=None):
+        worker = getattr(self, "worker", None)
+        try:
+            CameraRuntimeController._apply_frame(self, raw_frame, display_frame, frame_meta)
+        finally:
+            if worker is not None:
+                worker.acknowledge_preview_frame()
+
+    def _apply_frame(self, raw_frame, display_frame, frame_meta=None):
         self.latest_raw_frame = raw_frame
         self.latest_display_frame = display_frame
 

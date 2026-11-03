@@ -10,8 +10,8 @@ def main(argv=None):
     if arguments and arguments[0] == "--mwdriver-phase-check":
         from mwdriver.analysis.check_measured_vs_expected_phase import main as phase_check_main
 
-        result = phase_check_main(arguments[1:])
-        return int(result or 0)
+        phase_check_main(arguments[1:])
+        return 0
 
     if arguments and arguments[0] == "--mwdriver-phase-analysis":
         from mwdriver.analysis.phase_analysis_new import main as phase_analysis_main

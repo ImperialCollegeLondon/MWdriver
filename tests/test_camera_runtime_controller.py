@@ -2,13 +2,47 @@ import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from mwdriver.ui.camera_runtime_controller import CameraRuntimeController
+from mwdriver.ui.camera_runtime_controller import CameraRuntimeController, CameraWorker
 
 
 class CameraRuntimeControllerTests(unittest.TestCase):
+    def test_live_preview_has_only_one_unacknowledged_frame(self):
+        worker = CameraWorker(None)
+        frames = []
+        worker.frame_ready.connect(lambda raw, display, meta: frames.append(raw))
+        frame = np.ones((4, 5))
+        self.assertTrue(worker.publish_frame(frame, None))
+        for _ in range(100):
+            self.assertFalse(worker.publish_frame(frame, None))
+        self.assertEqual(len(frames), 1)
+        worker.acknowledge_preview_frame()
+        self.assertTrue(worker.publish_frame(frame, None))
+
+    def test_histogram_preview_rate_is_limited_but_capture_is_not(self):
+        worker = CameraWorker(None, histogram_enabled_getter=lambda: True)
+        frame = np.ones((4, 5))
+        with patch("mwdriver.ui.camera_runtime_controller.time.monotonic", side_effect=[0, 0.1, 0.21]):
+            self.assertTrue(worker.publish_frame(frame, None))
+            worker.acknowledge_preview_frame()
+            self.assertFalse(worker.publish_frame(frame, None))
+            self.assertTrue(worker.publish_frame(frame, None))
+        for index in range(6):
+            self.assertTrue(worker.publish_frame(frame, {"slot": index}, external_capture=True))
+
+    def test_preview_acknowledgement_runs_even_when_display_fails(self):
+        worker = MagicMock()
+        viewer = SimpleNamespace(worker=worker)
+        with patch.object(CameraRuntimeController, "_apply_frame", side_effect=RuntimeError("display failed")):
+            with self.assertRaises(RuntimeError):
+                CameraRuntimeController.update_frame(viewer, None, None)
+        worker.acknowledge_preview_frame.assert_called_once()
+
     def test_external_trigger_frames_skip_preview_updates(self):
         raw_frame = object()
         display_frame = object()

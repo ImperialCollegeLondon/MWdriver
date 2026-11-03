@@ -227,6 +227,11 @@ not included in the repository.
    During normal phase capture, preview redraws are suspended while the
    controller collects six externally triggered frames. Recalibration displays
    each acquired frame, but keeps live streaming disabled between capture sets.
+   Live preview permits only one unprocessed frame update at a time, discarding
+   intervening preview frames when the GUI is busy. With the preview histogram
+   enabled, display updates are capped at five per second to reduce histogram
+   worker churn. External-trigger capture frames are never throttled by this
+   preview policy; acquisition FPS can exceed displayed preview FPS.
 
 3. Set the camera exposure and ROI, then choose **Start Phase Capture**.
    The controller temporarily uses external triggering, saves six frames under

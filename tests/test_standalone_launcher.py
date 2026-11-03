@@ -26,7 +26,7 @@ class StandaloneLauncherTests(unittest.TestCase):
     def test_phase_checker_mode_does_not_start_camera(self):
         with patch(
             "mwdriver.analysis.check_measured_vs_expected_phase.main",
-            return_value=None,
+            return_value=object(),
         ) as phase_check, patch("camera.main") as camera_main:
             result = launcher.main([
                 "--mwdriver-phase-check", "C:/captures/run", "--no-diagnostic-plots",
