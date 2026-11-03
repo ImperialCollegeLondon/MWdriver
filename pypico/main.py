@@ -36,7 +36,7 @@ HALF_PERIOD_MS = 650
 # Absolute waveform update interval.
 WAVEFORM_STEP_US = 1000
 
-MAX_DUTY = 65535
+MAX_DUTY = 62000
 MIN_DUTY = 0
 
 
@@ -954,6 +954,14 @@ print(
 print(
     "CENTER_CAPTURE_WINDOW:",
     CENTER_CAPTURE_WINDOW
+)
+print(
+    "MAX_DUTY:",
+    MAX_DUTY
+)
+print(
+    "MIN_DUTY:",
+    MIN_DUTY
 )
 print(
     "Timing method: absolute ticks_us scheduling"
